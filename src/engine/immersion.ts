@@ -144,9 +144,9 @@ function screenSamples(c: VenueConfiguration, stepDeg = 3): Sample[] {
   return out;
 }
 
-/** Stage focus point: centre of the stage front edge at deck level. */
+/** Stage focus point: centre of the stage front edge at deck level; the deck centre for a central stage. */
 export function stageFocus(c: VenueConfiguration): Vec3 {
-  return [0, c.stage.centerY - c.stage.depth / 2, c.floor.mainFloorElevation + c.stage.height];
+  return [0, c.stage.type === 'central' ? c.stage.centerY : c.stage.centerY - c.stage.depth / 2, c.floor.mainFloorElevation + c.stage.height];
 }
 
 const FIELD_AZ = toRad(100);

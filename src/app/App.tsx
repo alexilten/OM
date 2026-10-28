@@ -7,6 +7,8 @@ import { SelectionPanel } from './SelectionPanel';
 import { useStudio, type ViewName } from './store';
 import { TopBar } from './TopBar';
 import { Timeline } from './TransformPanel';
+import { CompareView } from './VenuePanel';
+import { useState } from 'react';
 import { Viewport } from './Viewport';
 
 const VIEWS: { name: ViewName; label: string; title: string }[] = [
@@ -57,11 +59,12 @@ function ViewToolbar() {
 
 export function App() {
   const transform = useStudio((s) => s.workspace === 'TRANSFORM');
+  const [compare, setCompare] = useState(false);
   return (
     <div className="app">
       <TopBar />
       <main className="workspace">
-        <LayerPanel />
+        <LayerPanel onCompare={() => setCompare(true)} />
         <div className={`viewport ${transform ? 'transform-mode' : ''}`}>
           <Viewport />
           <ViewToolbar />
@@ -75,6 +78,7 @@ export function App() {
         </div>
         <ParameterPanel />
       </main>
+      {compare && <CompareView onClose={() => setCompare(false)} />}
     </div>
   );
 }

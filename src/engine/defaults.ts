@@ -43,6 +43,19 @@ export const OM_300_FLAGSHIP: VenueConfiguration = {
     clearanceHoldS: 60,
     foldS: 20,
   },
+  building: {
+    enabled: true,
+    width: 36,
+    depth: 40,
+    clearHeight: 19,
+    floorElevation: -3.3,
+    offsetX: 0,
+    offsetY: -2,
+    circulationWidth: 2,
+    columns: { layout: 'perimeter', spacingX: 9, spacingY: 10, size: 0.6 },
+  },
+  operatingState: 'seated',
+  preset: { size: 'om-300', performance: 'cinematic' },
   led: { enabled: true, productId: 'roe-ruby-c-rbc2.6f', extent: 'full', bandElevationDeg: 10, bandRows: 3, placement: 'tangent', jointGap: 0 },
   analysis: DEFAULT_ANALYSIS,
 };
@@ -54,7 +67,8 @@ export function cloneConfig(c: VenueConfiguration): VenueConfiguration {
 /**
  * Brings a saved configuration up to the current shape. Round 01–02 files carry `ledPreview`
  * (a band of rows); it becomes `led` with the band extent so the file regenerates as it was saved.
- * Files before Round 04 get the default transformation.
+ * Files before Round 04 get the default transformation; files before Round 05 get the default
+ * building with its fit check off, so they regenerate the same objects, and the seated state.
  */
 export function normalizeConfig(raw: VenueConfiguration & { ledPreview?: { enabled: boolean; productId: string; bandElevationDeg: number; bandRows: number } }): VenueConfiguration {
   const { ledPreview, ...rest } = cloneConfig(raw) as typeof raw;
@@ -63,5 +77,7 @@ export function normalizeConfig(raw: VenueConfiguration & { ledPreview?: { enabl
   c.led ??= cloneConfig(OM_300_FLAGSHIP).led;
   c.transformation ??= cloneConfig(OM_300_FLAGSHIP).transformation;
   c.analysis ??= cloneConfig(OM_300_FLAGSHIP).analysis;
+  c.building ??= { ...cloneConfig(OM_300_FLAGSHIP).building, enabled: false };
+  c.operatingState ??= 'seated';
   return c;
 }

@@ -8,6 +8,7 @@ import { IssueList } from './IssueList';
 import { AnalysisSection, CapacityTarget } from './AnalysisPanel';
 import { LedSection } from './LedPanel';
 import { TransformSection } from './TransformPanel';
+import { BuildingSection, PresetSection } from './VenuePanel';
 
 const F = (path: string, label: string, kind: FieldSpec['kind'], min: number, max: number, step: number, tip: string): FieldSpec => ({ path, label, kind, min, max, step, tip });
 
@@ -152,6 +153,9 @@ export function ParameterPanel() {
   return (
     <aside className="panel right">
       <IssueList />
+      <Section title="Venue preset" defaultOpen={false}>
+        <PresetSection />
+      </Section>
       {transform && (
         <Section title="Transformation">
           <TransformSection />
@@ -200,6 +204,7 @@ export function ParameterPanel() {
           <option value="minimal">Minimal performance platform</option>
           <option value="concert">Concert stage</option>
           <option value="cinematic">Immersive cinematic stage</option>
+          <option value="proscenium">Theatrical proscenium</option>
           <option value="central">Central platform</option>
           <option value="custom">Custom</option>
         </select>
@@ -215,6 +220,9 @@ export function ParameterPanel() {
           <TransformSection />
         </Section>
       )}
+      <Section title="Building fit" defaultOpen={false}>
+        <BuildingSection />
+      </Section>
       <Section title="Design envelope" defaultOpen={false}>
         {ENVELOPE.map((f) => (
           <ParamField key={f.path} spec={f} />

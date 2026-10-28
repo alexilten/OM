@@ -83,7 +83,7 @@ Library: `SeatingProduct`, `LedProduct` with `SpecValue {value, status: manufact
 Generated: `VenueModel`, `VenueObject`, `BlockDefinition`, `SeatRecord` (= `AudienceEyePoint`), `Metric` (quality: exact|derived|estimate|conceptual), `Issue`.
 Export: `ExportManifest`.
 
-`ImmersionAnalysis` (R02) lives in `src/engine/immersion.ts`; its settings (weights, ramps) are part of `VenueConfiguration.analysis` so saved files reproduce scores. The LED system (R03) is `VenueConfiguration.led` plus `src/engine/led.ts`; Round 01–02 files carrying `ledPreview` are migrated on open. The transformation (R04) is `VenueConfiguration.transformation` plus `src/engine/kinetics.ts` (`KineticAssembly`, `TransitionStep`, `TransformationModel`, `poseAt`); seats carry their aisle block and their wagon as `parentAssembly`. Still to add: `BuildingEnvelope` (R05).
+`ImmersionAnalysis` (R02) lives in `src/engine/immersion.ts`; its settings (weights, ramps) are part of `VenueConfiguration.analysis` so saved files reproduce scores. The LED system (R03) is `VenueConfiguration.led` plus `src/engine/led.ts`; Round 01–02 files carrying `ledPreview` are migrated on open. The transformation (R04) is `VenueConfiguration.transformation` plus `src/engine/kinetics.ts` (`KineticAssembly`, `TransitionStep`, `TransformationModel`, `poseAt`); seats carry their aisle block and their wagon as `parentAssembly`. The building (R05) is `VenueConfiguration.building` plus `src/engine/building.ts` (`analyzeFit`); `operatingState` sets which end of the transformation the venue is shown and exported in; `preset` records the size × performance preset it started from (`src/engine/presets.ts`). A project (`src/engine/project.ts`) is a list of configurations, one per alternative.
 
 ## 5. Development rounds and acceptance criteria
 
@@ -94,7 +94,7 @@ Export: `ExportManifest`.
 | **02** Seating & experience | Seat product system, generative tiers with accessibility positions, capacity target solver, sightlines (head-clearance proxies, C-value later), immersion scoring + heatmap, view-from-seat FOV | Heatmap responds logically to geometry; every score traceable to its inputs; capacity target never yields impossible layouts | **Done** except accessibility positions (see §9) |
 | **03** LED systems | Panelization strategies for families 01–05, deviation/gap visualisation, counts, resolution, weight, power, alternatives when curvature fails | Cabinets keep true size; ideal vs built difference shown and quantified | **Done** (see §8c) |
 | **04** Transformation | Kinetic assemblies (retractable banks, lifts, translating rows, stage lifts), state machine, bottom timeline, playback, collision/clearance checks, section animation | Explicit paths; forward/reverse; audience cleared before motion; conflicts flagged; machinery marked conceptual | **Done** (see §8d) |
-| **05** Presets & venue fit | OM 150/300/400/Standing/360 presets × performance presets, project store, duplication, building envelope with columns, fit analysis | Presets use the same engine; save/reopen reproduces geometry | Planned |
+| **05** Presets & venue fit | OM 150/300/400/Standing/360 presets × performance presets, project store, duplication, building envelope with columns, fit analysis | Presets use the same engine; save/reopen reproduces geometry | **Done** (see §8e) |
 | **06** CAD deliverables | Exact geometry everywhere practical, named blocks, multiple state exports, schedules (CSV), DXF, GLB, PDF sheets | Export validator extended to every state | Planned |
 | **07** Optimisation | Reverse configuration ("250 premium seats", "fit 30 m wide"), immersion-driven layout search, comparison dashboards | Deterministic, explainable proposals | Planned |
 
@@ -135,6 +135,11 @@ Export: `ExportManifest`.
 | 2026-10-28 | Seated → standing uses telescopic wagons: one per row and aisle block, each sliding straight back along its block's centre line until it nests one row pitch (less a nest offset) under the row behind; the back row stays put. The stage lowers by its own height | The most common retractable-seating type (Gala/Figueras/Hussey class). Straight paths are explicit and easy to engineer later |
 | 2026-10-28 | Sequence: interlock hold (house confirmed empty) → seats fold → wagons and stage lift move together. Standing → seated is the same sequence played backwards | "Audience cleared before motion" is structural: no assembly starts before the hold ends |
 | 2026-10-28 | Collisions are geometric only: plan footprints sampled every 1 s against every other assembly whose height band overlaps; touching is allowed, overlap is a conflict. Wagons stop short to keep 200 mm from the screen | Fast enough to run on every edit (≈0.1–0.2 s); labelled conceptual (R5) |
+| 2026-10-28 | Presets are two independent systems: size (radius, rows, front row, fan) and performance (stage, seating focus, screen coverage, operating state). Everything else scales with R / 13 m. OM 300 × Cinematic is exactly the flagship default | "Presets use the same engine"; any size works with any arrangement, and an edited preset is still a normal configuration |
+| 2026-10-28 | The building is the site: presets and alternatives never change it unless the designer does | Lets OM 150/300/400 be checked against one building directly |
+| 2026-10-28 | Venue fit claims the design envelope (sphere + service zone) plus a circulation walkway; a column inside the sphere or the service zone is a clash, one in the walkway is advice | Simple, explainable rules that match "screen support envelope" and "audience circulation" in the brief |
+| 2026-10-28 | Alternatives live in the browser (localStorage) and regenerate on compare; nothing derived is stored | A saved project always reproduces its geometry |
+| 2026-10-28 | Public app on GitHub Pages, rebuilt on every push to main | Alex asked for public links (https://alexilten.github.io/OM/) |
 | 2026-10-28 | Standing capacity at 0.5 m² per person on the clear floor of the standing state (0.25 m grid inside the screen clearance) | Conceptual density, to be replaced by the OM team's figure (see §9 question 12) |
 
 ## 8. Round 01 status
@@ -192,6 +197,21 @@ Delivered:
 
 Known limits: folding is drawn by scaling the seat block (the export keeps the seat block and marks it folded); wagons move straight, so curved or pivoting banks are not modelled yet; the side blocks stop short of full nesting where the screen comes first; drives, guides, pits for wagons and egress during transformation are not modelled.
 
+## 8e. Round 05 status
+
+Delivered:
+
+- `src/engine/presets.ts` — size presets OM 150 (R 10 m), OM 300 (R 13 m), OM 400 (R 15 m) × performance presets Cinematic Immersion, Seated Concert, Standing Concert, Theatrical Proscenium, Theater in the Round; the five named venues from the brief built from them. With the default seats: OM 150 → 153 seats, OM 300 → 304, OM 400 → 397; OM 360 (in the round, screen all the way round, central stage) → 293 seats, all premium; the standing preset shows and exports the transformed state. All 15 combinations generate without motion conflicts.
+- `src/engine/building.ts` — simplified existing building (clear width, depth, height, structural floor, venue offset, circulation walkway, columns none / perimeter / grid) and fit checks: walls, clear height, columns in the sphere or service zone, walkway, floor or pit below the structural floor. Reports the largest sphere the building takes (exact, tested) and which size presets fit. Default: a 36 × 40 × 19 m clear-span hall with perimeter columns; OM 150 and OM 300 fit; OM 400 needs about 0.6 m more clear height and its walkway narrows to 1.5 m.
+- `src/engine/project.ts` — alternatives with unique ids and names, duplicate, delete, add from preset or file, parse with migration (invalid alternatives are dropped and named).
+- UI: Alternatives list in the left panel (switch, duplicate, delete, compare table of seats, premium seats, immersion, standing, LED units, changeover time and building fit, best values highlighted); Venue preset section (named venues, size × performance, apply or add as alternative, "edited since" note); Building fit section (verdict, checks, fit sphere to building, which sizes fit, building and column parameters); columns drawn red when they clash, orange in the walkway, ghosted when clear; Show and export as seated or standing.
+- Rhino export: building outline and corners on `06_ARCHITECTURE/Building_Envelope`, columns with `om.fit_status` on `Structure`, walkway on `Circulation`; building summary in the manifest. `npm run export:sample -- --presets` writes all five named venues (seated and standing).
+- `scripts/validate_3dm.py` — new checks: building outline size and floor, column count, each column's clash status recomputed from its geometry, clash count, a "fits" verdict really has the envelope inside the walls with no clashes. All 12 preset files pass.
+- Public app: GitHub Pages workflow, live at https://alexilten.github.io/OM/.
+- Tests: 58 (13 new).
+
+Known limits: entrances, exits, support spaces and mechanical access are not modelled yet; the building is a rectangle aligned with the venue (no rotation, no imported CAD); in-the-round closes the screen, so use the section cut to look inside; alternatives are stored per browser (Save/Open moves single alternatives between machines).
+
 ## 9. Open questions for the OM team
 
 1. **Pitch deck**: please share it; Round 02 seating/stage presets should match its diagrams.
@@ -207,3 +227,4 @@ Known limits: folding is drawn by scaling the seat block (the export keeps the s
 11. **LED joints**: what wedge joint between faceted cabinets is acceptable at OM viewing distances? It sets whether families 01–02 are viable or 04–05 are required (currently up to 52 mm near the top ring at R = 13 m).
 12. **Standing density and changeover**: what standing density should OM plan for (currently 0.5 m² per person), and what changeover time is acceptable? The default sequence takes 3:16 at 80 mm/s, of which 60 s is the clearance hold.
 13. **Transformation suppliers**: are Gala Systems or Figueras (or others) already in conversation? Their wagon dimensions and speeds would replace the conceptual defaults.
+14. **Candidate buildings**: are there real sites to test? Width, depth, clear height, column grid and floor level for two or three would make the fit check concrete (and show which size each can take).

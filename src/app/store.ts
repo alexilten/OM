@@ -3,6 +3,8 @@ import { cloneConfig, normalizeConfig, OM_300_FLAGSHIP } from '../engine/default
 import { analyzeImmersion, DEFAULT_ANALYSIS, type ImmersionAnalysis } from '../engine/immersion';
 import { LAYERS } from '../engine/layers';
 import { compareLedProducts, type LedSummary } from '../engine/led';
+import { buildPreset } from '../engine/presets';
+import { addAlternative, duplicateAlternative, parseProject, PROJECT_SCHEMA, removeAlternative, replaceAlternative, type ProjectFile } from '../engine/project';
 import { tryGenerateVenue } from '../engine/model';
 import { DEFAULT_SECTION, type SectionSettings } from '../engine/section';
 import type { Issue, VenueConfiguration, VenueModel } from '../engine/types';
@@ -50,6 +52,8 @@ interface StudioState {
   playing: PlayDirection;
   /** Playback speed relative to real time. */
   playRate: number;
+  /** Every alternative in the project; the active one mirrors `config`. */
+  project: ProjectFile;
 
   setParam: (path: string, value: unknown) => void;
   /** Applies several edits as one regeneration (e.g. mirrored azimuths). */
@@ -72,6 +76,15 @@ interface StudioState {
   setTransformT: (t: number) => void;
   play: (dir: PlayDirection) => void;
   setPlayRate: (rate: number) => void;
+  selectAlternative: (id: string) => void;
+  duplicateActive: () => void;
+  deleteAlternative: (id: string) => void;
+  /** Replaces the active alternative with a preset, keeping its id and building. */
+  applyPreset: (size: string, performance: string, name?: string) => void;
+  /** Adds a preset as a new alternative (keeping the current building) and switches to it. */
+  addPreset: (size: string, performance: string, name?: string) => void;
+  /** Adds an opened configuration as a new alternative. */
+  addConfig: (c: VenueConfiguration) => void;
 }
 
 export function getPath(obj: unknown, path: string): unknown {
@@ -87,16 +100,45 @@ function setPath<T>(obj: T, path: string, value: unknown): T {
   return copy;
 }
 
-const initial = tryGenerateVenue(OM_300_FLAGSHIP);
+const STORAGE_KEY = 'om-studio.project';
+
+/** The project saved in this browser, or a fresh one holding the flagship. */
+function loadProject(): ProjectFile {
+  try {
+    const raw = localStorage.getItem(STORAGE_KEY);
+    if (raw) return parseProject(JSON.parse(raw)).project;
+  } catch {
+    // Unreadable or blocked storage: start fresh.
+  }
+  return { schema: PROJECT_SCHEMA, activeId: OM_300_FLAGSHIP.id, alternatives: [cloneConfig(OM_300_FLAGSHIP)] };
+}
+
+const startProject = loadProject();
+const startConfig = startProject.alternatives.find((a) => a.id === startProject.activeId)!;
+const initial = (() => {
+  const r = tryGenerateVenue(startConfig);
+  return r.model ? { config: startConfig, ...r } : { config: cloneConfig(OM_300_FLAGSHIP), ...tryGenerateVenue(OM_300_FLAGSHIP) };
+})();
+
+/** Timeline position of a configuration's operating state. */
+const restT = (m: VenueModel) => (m.config.operatingState === 'standing' ? (m.transformation?.duration ?? 0) : 0);
 
 export const useStudio = create<StudioState>((set, get) => {
   const apply = (config: VenueConfiguration) => {
     const r = tryGenerateVenue(config);
-    if (r.model) set({ config, model: r.model, issues: r.issues, invalid: false, transformT: Math.min(get().transformT, r.model.transformation?.duration ?? 0) });
-    else set({ config, issues: r.issues, invalid: true });
+    const project = replaceAlternative(get().project, config);
+    if (r.model) {
+      // Outside TRANSFORM the venue shows its operating state; inside, the timeline keeps its place.
+      const transformT = get().workspace === 'TRANSFORM' ? Math.min(get().transformT, r.model.transformation?.duration ?? 0) : restT(r.model);
+      set({ config, model: r.model, issues: r.issues, invalid: false, transformT, project });
+    } else set({ config, issues: r.issues, invalid: true, project });
+  };
+  const switchTo = (project: ProjectFile) => {
+    set({ project, selectedId: null, seatView: null, playing: 0 });
+    apply(project.alternatives.find((a) => a.id === project.activeId)!);
   };
   return {
-    config: cloneConfig(OM_300_FLAGSHIP),
+    config: initial.config,
     model: initial.model!,
     issues: initial.issues,
     invalid: false,
@@ -113,14 +155,15 @@ export const useStudio = create<StudioState>((set, get) => {
     heatmap: false,
     ledColor: 'product',
     ledComparison: null,
-    transformT: 0,
+    transformT: restT(initial.model!),
     playing: 0,
     playRate: 10,
+    project: startProject,
 
     setParam: (path, value) => apply(setPath(get().config, path, value)),
     setParams: (entries) => apply(entries.reduce((c, [p, v]) => setPath(c, p, v), get().config)),
     loadConfig: (c) => {
-      apply({ ...normalizeConfig(c), analysis: c.analysis ?? DEFAULT_ANALYSIS });
+      apply({ ...normalizeConfig(c), id: get().config.id, analysis: c.analysis ?? DEFAULT_ANALYSIS });
       set({ selectedId: null, seatView: null });
     },
     resetParam: (path) => apply(setPath(get().config, path, getPath(OM_300_FLAGSHIP, path))),
@@ -137,7 +180,7 @@ export const useStudio = create<StudioState>((set, get) => {
     select: (selectedId) => set({ selectedId }),
     setMediaDisplay: (mediaDisplay) => set({ mediaDisplay }),
     // Only TRANSFORM shows a moved pose; other workspaces always show the seated state.
-    setWorkspace: (workspace) => set({ workspace, heatmap: workspace === 'ANALYZE', ...(workspace === 'TRANSFORM' ? {} : { transformT: 0, playing: 0 as const }) }),
+    setWorkspace: (workspace) => set({ workspace, heatmap: workspace === 'ANALYZE', ...(workspace === 'TRANSFORM' ? {} : { transformT: restT(get().model), playing: 0 as const }) }),
     setFov: (fov) => set({ fov }),
     requestView: (name) => set({ view: { name, nonce: get().view.nonce + 1 }, seatView: null }),
     viewFromSeat: (seatId) => set({ seatView: seatId ? { seatId } : null }),
@@ -167,6 +210,21 @@ export const useStudio = create<StudioState>((set, get) => {
       set({ playing });
     },
     setPlayRate: (playRate) => set({ playRate }),
+    selectAlternative: (id) => {
+      if (id !== get().project.activeId) switchTo({ ...get().project, activeId: id });
+    },
+    duplicateActive: () => switchTo(duplicateAlternative(get().project, get().project.activeId).project),
+    deleteAlternative: (id) => switchTo(removeAlternative(get().project, id)),
+    applyPreset: (size, performance, name) => {
+      const { config } = get();
+      const c = buildPreset(size, performance, config);
+      apply({ ...c, id: config.id, name: name ?? c.name });
+    },
+    addPreset: (size, performance, name) => {
+      const c = buildPreset(size, performance, get().config);
+      switchTo(addAlternative(get().project, { ...c, name: name ?? c.name }, get().project.activeId).project);
+    },
+    addConfig: (c) => switchTo(addAlternative(get().project, { ...normalizeConfig(c), analysis: c.analysis ?? DEFAULT_ANALYSIS }).project),
   };
 });
 
@@ -184,7 +242,35 @@ const scheduleAnalysis = () => {
 };
 useStudio.subscribe((s, prev) => {
   if (s.model !== prev.model) scheduleAnalysis();
+
+// Keep the project in this browser; storage can be unavailable (private windows, previews).
+let saveTimer: ReturnType<typeof setTimeout> | undefined;
+useStudio.subscribe((s, prev) => {
+  if (s.project === prev.project) return;
+  clearTimeout(saveTimer);
+  saveTimer = setTimeout(() => {
+    try {
+      localStorage.setItem(STORAGE_KEY, JSON.stringify(useStudio.getState().project));
+    } catch {
+      // Not persisted; the session still works.
+    }
+  }, 400);
+});
 });
 scheduleAnalysis();
+
+// Keep the project in this browser; storage can be unavailable (private windows, previews).
+let saveTimer: ReturnType<typeof setTimeout> | undefined;
+useStudio.subscribe((s, prev) => {
+  if (s.project === prev.project) return;
+  clearTimeout(saveTimer);
+  saveTimer = setTimeout(() => {
+    try {
+      localStorage.setItem(STORAGE_KEY, JSON.stringify(useStudio.getState().project));
+    } catch {
+      // Not persisted; the session still works.
+    }
+  }, 400);
+});
 
 export const isLayerVisible = (vis: Record<string, boolean>, path: string) => vis[path] !== false && vis[path.split('/')[0]] !== false;

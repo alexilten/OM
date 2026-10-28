@@ -47,6 +47,16 @@ export function validateConfig(c: VenueConfiguration): Issue[] {
     ['transformation.stageSpeed', c.transformation.stageSpeed],
     ['transformation.clearanceHoldS', c.transformation.clearanceHoldS],
     ['transformation.foldS', c.transformation.foldS],
+    ['building.width', c.building.width],
+    ['building.depth', c.building.depth],
+    ['building.clearHeight', c.building.clearHeight],
+    ['building.floorElevation', c.building.floorElevation],
+    ['building.offsetX', c.building.offsetX],
+    ['building.offsetY', c.building.offsetY],
+    ['building.circulationWidth', c.building.circulationWidth],
+    ['building.columns.spacingX', c.building.columns.spacingX],
+    ['building.columns.spacingY', c.building.columns.spacingY],
+    ['building.columns.size', c.building.columns.size],
   ];
   for (const [path, v] of numbers) if (!finite(v)) err(path, 'not-a-number', `${path} must be a finite number.`);
   if (issues.length) return issues;
@@ -105,6 +115,21 @@ export function validateConfig(c: VenueConfiguration): Issue[] {
     if (t.deckThickness <= 0 || t.foldedSeatHeight <= 0) err('transformation.deckThickness', 'kin-deck', 'Deck thickness and folded seat height must be above zero.');
     if (t.wagonSpeed <= 0 || t.stageSpeed <= 0) err('transformation.wagonSpeed', 'kin-speed', 'Machinery speeds must be above zero.');
     if (t.clearanceHoldS < 0 || t.foldS < 0) err('transformation.clearanceHoldS', 'kin-time', 'Hold and fold times cannot be negative.');
+  }
+
+  if (c.operatingState !== 'seated' && c.operatingState !== 'standing') err('operatingState', 'operating-state', 'Operating state must be "seated" or "standing".');
+  else if (c.operatingState === 'standing' && !t.enabled) err('operatingState', 'standing-needs-transformation', 'The standing state needs the transformation turned on.');
+
+  const b = c.building;
+  if (b.enabled) {
+    if (b.width < 5 || b.depth < 5 || b.width > 300 || b.depth > 300) err('building.width', 'building-size', 'Building width and depth must be between 5 m and 300 m.');
+    if (b.clearHeight < 3 || b.clearHeight > 100) err('building.clearHeight', 'building-height', 'Building clear height must be between 3 m and 100 m.');
+    if (b.circulationWidth < 0) err('building.circulationWidth', 'building-circulation', 'Circulation width cannot be negative.');
+    if (!['none', 'perimeter', 'grid'].includes(b.columns.layout)) err('building.columns.layout', 'building-columns', 'Column layout must be "none", "perimeter" or "grid".');
+    else if (b.columns.layout !== 'none') {
+      if (b.columns.spacingX < 2 || b.columns.spacingY < 2) err('building.columns.spacingX', 'building-column-spacing', 'Column spacing must be at least 2 m.');
+      if (b.columns.size <= 0 || b.columns.size > 3) err('building.columns.size', 'building-column-size', 'Column size must be above zero and at most 3 m.');
+    }
   }
 
   if (c.analysis) {

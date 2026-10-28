@@ -57,6 +57,7 @@ export interface ExportManifest {
     standingArea: number;
     standingCapacity: number;
   };
+  building?: { width: number; depth: number; clearHeight: number; fits: boolean; maxRadius: number; columns: number; clashes: number };
   immersion?: { average: number; premiumCount: number; warningCount: number; gradeCounts: Record<string, number> };
   sphereRadius: number;
   media: { azimuth0: number; azimuth1: number; elevation0: number; elevation1: number };
@@ -289,6 +290,15 @@ export function buildRhinoDocument(rh: Rhino, model: VenueModel, { state = 'seat
       conflicts: tr.conflicts.length,
       standingArea: +tr.standing.area.toFixed(3),
       standingCapacity: tr.standing.capacity,
+    },
+    building: model.fit && {
+      width: model.config.building.width,
+      depth: model.config.building.depth,
+      clearHeight: model.config.building.clearHeight,
+      fits: model.fit.fits,
+      maxRadius: +model.fit.maxRadius.toFixed(4),
+      columns: model.fit.columns.length,
+      clashes: model.fit.columns.filter((k) => k.status === 'inside' || k.status === 'service').length,
     },
     immersion: analysis && {
       average: +analysis.average.toFixed(4),

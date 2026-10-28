@@ -13,6 +13,8 @@ function formatMetric(m: Metric, units: 'm' | 'ft'): string {
       return MM_KEYS.has(m.key) ? `${(m.value * 1000).toFixed(1)} mm` : formatLength(m.value, units);
     case 'm2':
       return formatArea(m.value, units);
+    case 'm3':
+      return units === 'ft' ? `${Math.round(m.value * 35.3147).toLocaleString()} ft³` : `${Math.round(m.value).toLocaleString()} m³`;
     case 'deg':
       return `${m.value.toFixed(m.value % 1 ? 2 : 0)}°`;
     case 'kg':

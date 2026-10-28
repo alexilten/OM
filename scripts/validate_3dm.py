@@ -164,7 +164,8 @@ def main(path):
     bad = [o.Attributes.Name for o in tiers if abs(bbox(o.Geometry)[1][2] - pose_dz(o) - float(o.Attributes.GetUserString("om.tier_top_z"))) > 1e-4 or abs(bbox(o.Geometry)[0][2] - pose_dz(o) - tier_bottom(o)) > 1e-4]
     rep.check(tiers and not bad, f"{len(tiers)} tier platforms/decks span their stated bottom → tier top", ", ".join(bad))
     half = R + config["envelope"]["serviceZone"]
-    outside = [o.Attributes.Name for o in top if any(abs(x) > half + 1e-6 or abs(y) > half + 1e-6 for x, y, _ in exact_points(o.Geometry))]
+    site = {"BuildingEnvelope", "Column", "Circulation"}
+    outside = [o.Attributes.Name for o in top if o.Attributes.GetUserString("om.category") not in site and any(abs(x) > half + 1e-6 or abs(y) > half + 1e-6 for x, y, _ in exact_points(o.Geometry))]
     rep.check(not outside, f"all objects inside the {2*half:.1f} m design envelope (plan, exact vertices)", ", ".join(outside[:5]))
 
     led = manifest.get("led")
@@ -242,6 +243,42 @@ def main(path):
         rep.check(not wrong, "seat grades follow the published thresholds", ", ".join(wrong[:5]))
         avg = sum(scores) / len(scores) if scores else 0
         rep.check(abs(avg - imm["average"]) < 1e-3, "seat scores average to the manifest figure", f"{avg:.4f} vs {imm['average']}")
+
+    bld = manifest.get("building")
+    if bld:
+        print("\nBuilding fit")
+        b = config["building"]
+        outline = by_id.get("bldg.outline.floor")
+        if rep.check(outline is not None, "building outline present"):
+            lo, hi = bbox(outline.Geometry)
+            rep.check(abs(hi[0] - lo[0] - b["width"]) < 1e-6 and abs(hi[1] - lo[1] - b["depth"]) < 1e-6 and abs(lo[2] - b["floorElevation"]) < 1e-6,
+                      f"outline is {b['width']} × {b['depth']} m at the structural floor")
+        cols = [o for o in top if o.Attributes.GetUserString("om.category") == "Column"]
+        rep.check(len(cols) == bld["columns"], f"{bld['columns']} columns", f"found {len(cols)}")
+        R = config["sphere"]["radius"]
+        service = R + config["envelope"]["serviceZone"]
+        wrong = []
+        clashes = 0
+        for o in cols:
+            lo, hi = bbox(o.Geometry)
+            dx = max(0.0, lo[0], -hi[0])
+            dy = max(0.0, lo[1], -hi[1])
+            d = math.hypot(dx, dy)
+            st = o.Attributes.GetUserString("om.fit_status")
+            clash = d < service
+            clashes += clash
+            if clash != (st in ("inside", "service")) or (st == "inside") != (d < R):
+                wrong.append(o.Attributes.Name)
+            if abs(hi[2] - lo[2] - b["clearHeight"]) > 1e-6:
+                wrong.append(o.Attributes.Name + " height")
+        rep.check(not wrong, "column clash status matches its distance from the sphere centre", ", ".join(wrong[:5]))
+        rep.check(clashes == bld["clashes"], f"{bld['clashes']} column clashes", f"found {clashes}")
+        half = R + config["envelope"]["serviceZone"]
+        x0, x1 = b["offsetX"] - b["width"] / 2, b["offsetX"] + b["width"] / 2
+        y0, y1 = b["offsetY"] - b["depth"] / 2, b["offsetY"] + b["depth"] / 2
+        plan_ok = x0 <= -half + 1e-9 and x1 >= half - 1e-9 and y0 <= -half + 1e-9 and y1 >= half - 1e-9
+        rep.check(not bld["fits"] or (plan_ok and clashes == 0), "a fit verdict means the envelope is inside the walls and no column clashes",
+                  "fits" if bld["fits"] else "does not fit")
 
     kin = manifest.get("transformation")
     if kin:

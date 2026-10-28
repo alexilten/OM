@@ -19,7 +19,7 @@ export function TopBar() {
   const units = useStudio((s) => s.units);
   const setUnits = useStudio((s) => s.setUnits);
   const setParam = useStudio((s) => s.setParam);
-  const loadConfig = useStudio((s) => s.loadConfig);
+  const addConfig = useStudio((s) => s.addConfig);
   const workspace = useStudio((s) => s.workspace);
   const setWorkspace = useStudio((s) => s.setWorkspace);
   // The export follows the timeline: standing only when the scrubber sits at the standing end.
@@ -72,8 +72,8 @@ export function TopBar() {
             e.target.value = '';
             if (!f) return;
             try {
-              loadConfig(await openConfiguration(f));
-              flash(`Opened ${f.name}`);
+              addConfig(await openConfiguration(f));
+              flash(`Opened ${f.name} as a new alternative`);
             } catch (err) {
               flash(`Could not open: ${(err as Error).message}`);
             }
