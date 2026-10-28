@@ -32,6 +32,7 @@ export class ShowAudio {
   playing = false;
   private spatial: { speakers: [number, number, number][]; eye: [number, number, number]; facing: [number, number, number] } | null = null;
   private panners: PannerNode[] = [];
+  private tap: MediaStreamAudioDestinationNode | null = null;
 
   constructor() {
     this.ctx = new AudioContext();
@@ -64,6 +65,15 @@ export class ShowAudio {
 
   setVolume(v: number) {
     this.master.gain.setTargetAtTime(v, this.ctx.currentTime, 0.05);
+  }
+
+  /** The limited master mix as a MediaStream, for clip recording. */
+  recordStream(): MediaStream {
+    if (!this.tap) {
+      this.tap = this.ctx.createMediaStreamDestination();
+      this.analyser.connect(this.tap);
+    }
+    return this.tap.stream;
   }
 
   /** Show time in seconds (the master clock). */

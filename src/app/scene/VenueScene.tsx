@@ -10,7 +10,7 @@ import { poseAt, type Pose, type TransformationModel } from '../../engine/kineti
 import type { Geometry, VenueObject, Vec3 } from '../../engine/types';
 import { ledUnitColor } from '../ledColors';
 import { isLayerVisible, useStudio } from '../store';
-import { ShowBeams, ShowSurface } from './ShowScene';
+import { HapticGlow, HazeVolume, ScreenSpill, ShowBeams, ShowSurface } from './ShowScene';
 import { annularSectorGeometry, blockGeometry, boxGeometry, calibrationTexture, curvePoints, frameMatrix, sphereGraticule, spherePatchGeometry } from './threeGeometry';
 
 const COLORS = {
@@ -344,7 +344,14 @@ export function VenueScene() {
     <group rotation={[-Math.PI / 2, 0, 0]}>
       {shown(model.objects.find((o) => o.id === 'ref.sphere')!) && <ReferenceSphere R={model.config.sphere.radius} />}
       {show ? <ShowSurface o={media} /> : shown(media) && <MediaSurface o={media} />}
-      {show && <ShowBeams />}
+      {show && (
+        <>
+          <ShowBeams />
+          <HazeVolume />
+          <HapticGlow />
+          <ScreenSpill />
+        </>
+      )}
       {solids.filter(({ o }) => shown(o)).map(({ o, geo, color }) => (
         // Clear columns are ghosted so they do not hide the venue; clashing ones stay solid.
         <Solid key={o.id} o={o} geo={geo} color={color} offset={offsetOf(o.id)} opacity={(o.category === 'Column' && o.metadata.fit_status === 'clear') || o.category === 'SafetyVolume' ? 0.25 : 1} />

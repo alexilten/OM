@@ -1,3 +1,4 @@
+import './showSync';
 import { GradeLegend } from './AnalysisPanel';
 import { LayerPanel } from './LayerPanel';
 import { LedLegend } from './LedPanel';
@@ -6,7 +7,7 @@ import { ParameterPanel } from './ParameterPanel';
 import { SelectionPanel } from './SelectionPanel';
 import { useStudio, type ViewName } from './store';
 import { TopBar } from './TopBar';
-import { ShowPanel } from './ShowPanel';
+import { CueRuler, ShowPanel } from './ShowPanel';
 import { Timeline } from './TransformPanel';
 import { CompareView } from './VenuePanel';
 import { useState } from 'react';
@@ -67,13 +68,14 @@ export function App() {
       <TopBar />
       <main className="workspace">
         {show ? <ShowPanel /> : <ParameterPanel />}
-        <div className={`viewport ${transform ? 'transform-mode' : ''}`}>
+        <div className={`viewport ${transform ? 'transform-mode' : show ? 'show-mode' : ''}`}>
           <Viewport />
           <ViewToolbar />
           <MetricsPanel />
           <SelectionPanel />
           <HeatLegend />
           {transform && <Timeline />}
+          {show && <CueRuler />}
           <div className="coords-legend">
             <span className="x">X</span> right · <span className="y">Y</span> forward · <span className="z">Z</span> up · origin = sphere centre
           </div>

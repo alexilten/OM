@@ -258,6 +258,8 @@ export interface VenueConfiguration {
   preset?: PresetOrigin;
   /** Immersion weights and ramps. Optional so Round 01 files still open; defaults apply when absent. */
   analysis?: AnalysisSettings;
+  /** The live show preview saved with this alternative (Round 09). Never affects geometry or export. */
+  show?: import('../show/definition').ShowDefinition;
 }
 
 // ─── Component library ───────────────────────────────────────────────────────
