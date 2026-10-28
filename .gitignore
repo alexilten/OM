@@ -1,0 +1,6 @@
+node_modules/
+dist/
+exports/
+.venv-validate/
+*.log
+.DS_Store

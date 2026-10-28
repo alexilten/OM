@@ -1,0 +1,174 @@
+#!/usr/bin/env python3
+"""
+Independent validation of an OM Studio .3dm export.
+
+Reads the file with McNeel's *Python* rhino3dm (a separate openNURBS binding from the JS one that
+wrote it) and checks it against the manifest and configuration embedded in the file itself.
+
+    python3 -m venv .venv-validate && .venv-validate/bin/pip install rhino3dm
+    .venv-validate/bin/python scripts/validate_3dm.py exports/om-300-flagship_round01.3dm
+
+Exit code 0 = all checks passed.
+"""
+import json
+import math
+import sys
+from collections import Counter
+
+import rhino3dm as r
+
+TOL = 1e-6
+
+
+class Report:
+    def __init__(self):
+        self.failures = 0
+
+    def check(self, ok, label, detail=""):
+        mark = "PASS" if ok else "FAIL"
+        if not ok:
+            self.failures += 1
+        print(f"  [{mark}] {label}" + (f" — {detail}" if detail else ""))
+        return ok
+
+
+def strings(model):
+    return {model.Strings[i][0]: model.Strings[i][1] for i in range(len(model.Strings))}
+
+
+def bbox(geom):
+    b = geom.GetBoundingBox()
+    return (b.Min.X, b.Min.Y, b.Min.Z), (b.Max.X, b.Max.Y, b.Max.Z)
+
+
+def exact_points(g):
+    """Points known exactly on the object (openNURBS bounding boxes of curved objects use the
+    control hull, which overshoots, so they cannot be used for containment checks)."""
+    if isinstance(g, r.Point):
+        return [(g.Location.X, g.Location.Y, g.Location.Z)]
+    if isinstance(g, r.InstanceReference):
+        return [(g.Xform.M03, g.Xform.M13, g.Xform.M23)]
+    if isinstance(g, r.Extrusion):
+        g = g.ToBrep(False)
+    if isinstance(g, r.Brep):
+        return [(v.Location.X, v.Location.Y, v.Location.Z) for v in g.Vertices]
+    if isinstance(g, r.Curve):
+        return [(p.X, p.Y, p.Z) for p in (g.PointAtStart, g.PointAtEnd)]
+    return []
+
+
+def main(path):
+    rep = Report()
+    print(f"OM Studio export validation: {path}")
+    model = r.File3dm.Read(path)
+    if model is None:
+        print("  [FAIL] file could not be read")
+        return 1
+
+    s = strings(model)
+    manifest = json.loads(s["om.manifest"])
+    config = json.loads(s["om.configuration"])
+    R = config["sphere"]["radius"]
+
+    print("\nFile")
+    rep.check(model.Settings.ModelUnitSystem == r.UnitSystem.Meters, "units are metres", str(model.Settings.ModelUnitSystem))
+    rep.check(s.get("om.schema") == manifest["schema"], "schema tag", s.get("om.schema", ""))
+    rep.check(manifest["configurationId"] == config["id"], "manifest matches embedded configuration", config["id"])
+
+    print("\nLayers")
+    paths = [l.FullPath for l in model.Layers]
+    missing = [p for p in manifest["layers"] if p not in paths]
+    rep.check(not missing, f"all {len(manifest['layers'])} layers present", ", ".join(missing[:5]))
+    rep.check(all(p.startswith("OM_STUDIO") for p in paths), "every layer sits under OM_STUDIO")
+
+    print("\nObjects")
+    top = [o for o in model.Objects if not o.Attributes.IsInstanceDefinitionObject]
+    rep.check(len(top) == manifest["objectCount"], "object count", f"{len(top)} in file vs {manifest['objectCount']} in manifest")
+    by_layer = Counter(paths[o.Attributes.LayerIndex] for o in top)
+    diffs = {k: (by_layer.get(k, 0), v) for k, v in manifest["countsByLayer"].items() if by_layer.get(k, 0) != v}
+    rep.check(not diffs, "objects per layer match manifest", str(diffs) if diffs else ", ".join(f"{k.split('::')[-1]}={v}" for k, v in sorted(by_layer.items())))
+    ids = [o.Attributes.GetUserString("om.object_id") for o in top]
+    rep.check(all(ids) and len(set(ids)) == len(ids), "every object has a unique om.object_id")
+    kinds = Counter(type(o.Geometry).__name__ for o in top)
+    print("     geometry types:", dict(kinds))
+    by_id = {o.Attributes.GetUserString("om.object_id"): o for o in top}
+
+    print("\nBlocks")
+    idefs = {d.Name: d for d in model.InstanceDefinitions}
+    for b in manifest["blocks"]:
+        d = idefs.get(b["name"])
+        if not rep.check(d is not None, f"block definition {b['name']}"):
+            continue
+        refs = [o for o in top if isinstance(o.Geometry, r.InstanceReference) and str(o.Geometry.ParentIdefId) == str(d.Id)]
+        rep.check(len(refs) == b["instances"], f"  {b['instances']} instances reference it", f"found {len(refs)}")
+    seats = [o for o in top if o.Attributes.GetUserString("om.category") == "Seat"]
+    rep.check(len(seats) == manifest["seatCount"], "seat count", f"{len(seats)}")
+    rep.check(all(isinstance(o.Geometry, r.InstanceReference) for o in seats), "seats are block instances")
+    rep.check(all(o.Attributes.GetUserString("om.row") and o.Attributes.GetUserString("om.manufacturer") for o in seats), "seats carry row / manufacturer metadata")
+
+    print("\nReference geometry")
+    origin = by_id["ref.origin"].Geometry.Location
+    rep.check(abs(origin.X) + abs(origin.Y) + abs(origin.Z) < TOL, "World_Origin at (0, 0, 0)")
+    lo, hi = bbox(by_id["ref.sphere"].Geometry)
+    rep.check(all(abs(v + R) < 1e-6 for v in lo) and all(abs(v - R) < 1e-6 for v in hi), f"reference sphere bbox = ±{R} m (centred on origin)")
+
+    print("\nMedia surface (exact sphere check)")
+    media = by_id["media.ideal"].Geometry
+    rep.check(isinstance(media, r.Brep) and len(media.Faces) == 1, "media surface is a single-face Brep")
+    srf = media.Faces[0].UnderlyingSurface()
+    nurbs = srf.ToNurbsSurface()
+    rep.check(nurbs.IsRational and nurbs.Degree(0) == 2 and nurbs.Degree(1) == 2, "rational degree-2 NURBS (exact, not a mesh)")
+    du, dv = srf.Domain(0), srf.Domain(1)
+    m = manifest["media"]
+    rep.check(abs(du.T0 - m["azimuth0"]) < TOL and abs(du.T1 - m["azimuth1"]) < TOL, "u-domain equals azimuth limits (rad)", f"{du.T0:.5f}..{du.T1:.5f}")
+    rep.check(abs(dv.T0 - m["elevation0"]) < TOL and abs(dv.T1 - m["elevation1"]) < TOL, "v-domain equals elevation limits (rad)", f"{dv.T0:.5f}..{dv.T1:.5f}")
+    worst = 0.0
+    n = 40
+    for i in range(n + 1):
+        for j in range(n + 1):
+            p = srf.PointAt(du.T0 + (du.T1 - du.T0) * i / n, dv.T0 + (dv.T1 - dv.T0) * j / n)
+            worst = max(worst, abs(math.sqrt(p.X ** 2 + p.Y ** 2 + p.Z ** 2) - R))
+    rep.check(worst < 1e-9 * R, f"{(n + 1) ** 2} sampled points lie on the sphere", f"max |r - R| = {worst:.2e} m")
+    corner = srf.PointAt(du.T0, dv.T0)
+    exp = (R * math.cos(m["elevation0"]) * math.sin(m["azimuth0"]), R * math.cos(m["elevation0"]) * math.cos(m["azimuth0"]), R * math.sin(m["elevation0"]))
+    rep.check(math.dist((corner.X, corner.Y, corner.Z), exp) < 1e-9, "lower-left corner at P(θ0, φ0)")
+
+    print("\nCoordinates and dimensions")
+    for cp in manifest["checkpoints"]:
+        o = by_id.get(cp["id"])
+        if o is None:
+            continue
+        g = o.Geometry
+        if isinstance(g, r.InstanceReference):
+            got = (g.Xform.M03, g.Xform.M13, g.Xform.M23)
+        elif isinstance(g, r.Point):
+            got = (g.Location.X, g.Location.Y, g.Location.Z)
+        else:
+            got = bbox(g)[0]
+        rep.check(math.dist(got, cp["point"]) < 1e-6, f"{cp['id']} at {tuple(round(v, 4) for v in cp['point'])}")
+    st = config["stage"]
+    lo, hi = bbox(by_id["stage.main"].Geometry)
+    rep.check(abs((hi[0] - lo[0]) - st["width"]) < TOL and abs((hi[1] - lo[1]) - st["depth"]) < TOL and abs((hi[2] - lo[2]) - st["height"]) < TOL,
+              "stage dimensions match configuration", f"{hi[0]-lo[0]:.3f} × {hi[1]-lo[1]:.3f} × {hi[2]-lo[2]:.3f} m")
+    floor = config["floor"]["mainFloorElevation"]
+    rep.check(abs(lo[2] - floor) < TOL, "stage sits on the main floor", f"z = {lo[2]:.4f}")
+    tiers = [o for o in top if o.Attributes.GetUserString("om.category") == "SeatingTier"]
+    bad = [o.Attributes.Name for o in tiers if abs(bbox(o.Geometry)[1][2] - float(o.Attributes.GetUserString("om.tier_top_z"))) > 1e-4 or abs(bbox(o.Geometry)[0][2] - floor) > 1e-4]
+    rep.check(tiers and not bad, f"{len(tiers)} tier platforms span floor → tier top", ", ".join(bad))
+    half = R + config["envelope"]["serviceZone"]
+    outside = [o.Attributes.Name for o in top if any(abs(x) > half + 1e-6 or abs(y) > half + 1e-6 for x, y, _ in exact_points(o.Geometry))]
+    rep.check(not outside, f"all objects inside the {2*half:.1f} m design envelope (plan, exact vertices)", ", ".join(outside[:5]))
+
+    print()
+    if rep.failures:
+        print(f"{rep.failures} check(s) FAILED")
+        return 1
+    print("All checks passed.")
+    return 0
+
+
+if __name__ == "__main__":
+    if len(sys.argv) != 2:
+        print(__doc__)
+        sys.exit(2)
+    sys.exit(main(sys.argv[1]))

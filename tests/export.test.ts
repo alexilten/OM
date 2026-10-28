@@ -1,0 +1,60 @@
+import rhino3dm from 'rhino3dm/rhino3dm.module.js';
+import { beforeAll, describe, expect, it } from 'vitest';
+import { OM_300_FLAGSHIP } from '../src/engine/defaults';
+import { LAYERS, rhinoLayerPath } from '../src/engine/layers';
+import { generateVenue } from '../src/engine/model';
+import { exportRhino, type Rhino } from '../src/export/rhino';
+
+let rh: Rhino;
+beforeAll(async () => {
+  rh = await rhino3dm();
+});
+
+describe('Rhino export', () => {
+  it('writes a readable .3dm with layers, blocks, metadata and exact media geometry', () => {
+    const model = generateVenue(OM_300_FLAGSHIP);
+    const { bytes, manifest } = exportRhino(rh, model);
+    const doc = rh.File3dm.fromByteArray(bytes);
+
+    expect(doc.settings().modelUnitSystem).toBe(rh.UnitSystem.Meters);
+
+    const paths = new Set<string>();
+    for (let i = 0; i < doc.layers().count; i++) paths.add(doc.layers().get(i).fullPath);
+    for (const l of LAYERS) expect(paths.has(rhinoLayerPath(l.path))).toBe(true);
+
+    const top = [];
+    for (let i = 0; i < doc.objects().count; i++) {
+      const o = doc.objects().get(i);
+      if (!o.attributes().isInstanceDefinitionObject) top.push(o);
+    }
+    expect(top.length).toBe(model.objects.length);
+    expect(manifest.seatCount).toBe(model.seats.length);
+    expect(doc.instanceDefinitions().count).toBe(model.blocks.length);
+
+    const media = top.find((o) => o.attributes().getUserString('om.object_id') === 'media.ideal')!;
+    const brep = media.geometry() as InstanceType<Rhino['Brep']>;
+    const srf = brep.surfaces().get(0);
+    const R = OM_300_FLAGSHIP.sphere.radius;
+    const [u0, u1] = srf.domain(0);
+    const [v0, v1] = srf.domain(1);
+    for (let i = 0; i <= 10; i++)
+      for (let j = 0; j <= 10; j++) {
+        const p = srf.pointAt(u0 + ((u1 - u0) * i) / 10, v0 + ((v1 - v0) * j) / 10);
+        expect(Math.hypot(p[0], p[1], p[2])).toBeCloseTo(R, 9);
+      }
+
+    const seat = top.find((o) => o.attributes().getUserString('om.object_id') === 'seat.A.01')!;
+    expect(seat.attributes().getUserString('om.row')).toBe('A');
+    expect(seat.attributes().getUserString('om.configuration_id')).toBe(OM_300_FLAGSHIP.id);
+
+    const strings = doc.strings();
+    let json = '';
+    for (let i = 0; i < strings.count; i++) {
+      const entry = strings.get(i) as unknown as [string, string] | { key: string; value: string };
+      const [k, v] = Array.isArray(entry) ? entry : [entry.key, entry.value];
+      if (k === 'om.configuration') json = v ?? strings.getvalue(i);
+    }
+    const embedded = JSON.parse(json);
+    expect(embedded).toEqual(OM_300_FLAGSHIP);
+  });
+});
