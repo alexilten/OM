@@ -29,6 +29,8 @@ const COLORS = {
   circulation: '#e8a33d',
 };
 
+const SYSTEM_COLORS: Record<string, string> = { lighting: '#e8a33d', audio: '#2a7f62', atmospherics: '#8fa3b8', tracking: '#7b5ea7' };
+
 const COLUMN_COLORS: Record<string, string> = { clear: COLORS.column, circulation: COLORS.circulation, service: '#e4572e', inside: '#d73027' };
 
 const lineColor = (o: VenueObject) => {
@@ -37,6 +39,8 @@ const lineColor = (o: VenueObject) => {
   if (o.id === 'ref.axis.z') return '#2e6fd6';
   if (o.layer.startsWith('01_MEDIA')) return COLORS.edge;
   if (o.category === 'Circulation') return COLORS.circulation;
+  if (o.category === 'Truss') return '#c47f1a';
+  if (o.category === 'Guardrail') return '#5a6b7d';
   if (o.category === 'BuildingEnvelope') return COLORS.building;
   if (o.layer.includes('Envelope')) return COLORS.envelope;
   return '#7d8a96';
@@ -343,8 +347,9 @@ export function VenueScene() {
         const visible = objs.filter(shown);
         if (!visible.length) return null;
         const led = blockId.includes('.led.');
+        const system = blockId.startsWith('block.sys.') ? blockId.split('.')[2] : undefined;
         const geo = blockGeos.get(blockId)!;
-        return <Instances key={blockId} objects={visible} geometry={geo} color={led ? COLORS.led : COLORS.seat} offsetOf={offsetOf} foldScale={led ? 1 : foldScaleOf(geo)} />;
+        return <Instances key={blockId} objects={visible} geometry={geo} color={system ? SYSTEM_COLORS[system] : led ? COLORS.led : COLORS.seat} offsetOf={offsetOf} foldScale={led || system ? 1 : foldScaleOf(geo)} />;
       })}
       {tiles.length > 0 && shown(tiles[0]) && <LedTiles objects={tiles} />}
       {lines.filter(({ o }) => shown(o)).map(({ o, pts }) => (

@@ -315,3 +315,11 @@ select { width: 100%; padding: 6px 8px; border: 1px solid var(--line-strong); bo
 .compare td.best { font-weight: 700; color: #166534; }
 .compare td.ok { color: #166534; }
 .compare td.bad { color: #991b1b; }
+
+/* Round 06: fit-out and immersion systems */
+.catalog-pick { display: flex; flex-direction: column; gap: 6px; }
+.catalog-pick .hint .badge { margin-left: 4px; }
+.system-card { display: flex; flex-direction: column; gap: 8px; padding: 10px; border: 1px solid #e6e8ec; border-radius: 10px; }
+.system-card.off { background: #fafbfc; }
+.system-head { display: flex; align-items: center; justify-content: space-between; gap: 8px; }
+.system-total { color: var(--muted); font-size: 11px; font-variant-numeric: tabular-nums; white-space: nowrap; }

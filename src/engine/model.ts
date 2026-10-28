@@ -11,6 +11,7 @@ import { generateTransformation } from './kinetics';
 import { generateLed } from './led';
 import { mediaMetrics, mediaObjects, referenceObjects, sphereRadiusAt } from './media';
 import { generateSeating } from './seating';
+import { generateSystems } from './systems';
 import type { Issue, Metric, VenueConfiguration, VenueModel } from './types';
 import { validateConfig } from './validate';
 
@@ -41,7 +42,9 @@ export function generateVenue(config: VenueConfiguration): VenueModel {
   issues.push(...kin.issues);
   const building = generateBuilding(config);
   issues.push(...building.issues);
-  const objects = [...base, ...kin.objects, ...building.objects];
+  const systems = generateSystems(config, base, seating.seats);
+  issues.push(...systems.issues);
+  const objects = [...base, ...kin.objects, ...systems.objects, ...building.objects];
 
   const known = new Set(LAYERS.map((l) => l.path));
   for (const o of objects) if (!known.has(o.layer)) throw new Error(`Object ${o.id} uses unknown layer ${o.layer}`);
@@ -83,10 +86,11 @@ export function generateVenue(config: VenueConfiguration): VenueModel {
   return {
     config,
     objects,
-    blocks: [...seating.blocks, ...led.blocks],
+    blocks: [...seating.blocks, ...led.blocks, ...systems.blocks],
     led: led.summary,
     seats,
-    metrics: [...mediaMetrics(config), ...led.metrics, ...audience, ...kin.metrics, ...architectureMetrics(config), ...building.metrics],
+    metrics: [...mediaMetrics(config), ...led.metrics, ...audience, ...kin.metrics, ...architectureMetrics(config), ...building.metrics, ...systems.metrics],
+    systems: systems.summary,
     transformation: kin.model,
     fit: building.fit,
     issues,

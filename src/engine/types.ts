@@ -10,6 +10,7 @@ import type { AnalysisSettings } from './immersion';
 import type { LedSummary } from './led';
 import type { TransformationModel } from './kinetics';
 import type { BuildingFit } from './building';
+import type { SystemsSummary } from './systems';
 
 export type Vec3 = [number, number, number];
 
@@ -184,6 +185,30 @@ export interface BuildingDefinition {
 /** The two end states of the transformation. */
 export type VenueState = 'seated' | 'standing';
 
+/** Quality tier for catalog items and immersion systems. */
+export type Tier = 'standard' | 'premium' | 'flagship';
+
+/** Fit-out products chosen from the catalog (ids into src/library/catalog.ts). */
+export interface FitoutDefinition {
+  riserDeck: string;
+  guardrail: string;
+  seatAccessory: string;
+}
+
+export interface SystemSetting {
+  enabled: boolean;
+  tier: Tier;
+  /** Density multiplier on the tier's unit count (0.5–2). */
+  scale: number;
+  /** Product choice where a system offers several (audio: an id from AUDIO_PRODUCTS). */
+  product?: string;
+}
+
+export type SystemId = 'lighting' | 'audio' | 'haptics' | 'atmospherics' | 'tracking';
+
+/** Immersion and technical systems, each a set of conceptual units on its own layer. */
+export type SystemsDefinition = Record<SystemId, SystemSetting>;
+
 /** Where a configuration came from; edits after applying a preset keep this as a record. */
 export interface PresetOrigin {
   size: string;
@@ -203,6 +228,8 @@ export interface VenueConfiguration {
   led: LedSystemDefinition;
   transformation: TransformationDefinition;
   building: BuildingDefinition;
+  fitout: FitoutDefinition;
+  systems: SystemsDefinition;
   /** The state the venue is shown and exported in outside the TRANSFORM timeline. */
   operatingState: VenueState;
   preset?: PresetOrigin;
@@ -376,9 +403,9 @@ export interface Metric {
   key: string;
   label: string;
   value: number | string;
-  unit?: 'm' | 'm2' | 'm3' | 'deg' | 'count' | 'kg' | 'W' | 'px' | '';
+  unit?: 'm' | 'm2' | 'm3' | 'deg' | 'count' | 'kg' | 'W' | 'px' | 'USD' | '';
   quality: MetricQuality;
-  group: 'Geometry' | 'Media' | 'LED' | 'Audience' | 'Transformation' | 'Architecture';
+  group: 'Geometry' | 'Media' | 'LED' | 'Audience' | 'Transformation' | 'Architecture' | 'Systems';
 }
 
 export type IssueSeverity = 'error' | 'warning' | 'info';
@@ -404,4 +431,6 @@ export interface VenueModel {
   transformation?: TransformationModel;
   /** Building fit, when a building is defined. */
   fit?: BuildingFit;
+  /** Fit-out and immersion systems: counts, loads and placeholder costs. */
+  systems: SystemsSummary;
 }

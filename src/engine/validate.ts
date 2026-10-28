@@ -1,3 +1,4 @@
+import { getAudioProduct, getCatalogItem, SYSTEMS, type CatalogCategory } from '../library/catalog';
 import { getLedProduct } from '../library/led';
 import { getSeatingProduct } from '../library/seating';
 import type { Issue, VenueConfiguration } from './types';
@@ -131,6 +132,24 @@ export function validateConfig(c: VenueConfiguration): Issue[] {
       if (b.columns.size <= 0 || b.columns.size > 3) err('building.columns.size', 'building-column-size', 'Column size must be above zero and at most 3 m.');
     }
   }
+
+  const fitout: [keyof VenueConfiguration['fitout'], CatalogCategory][] = [
+    ['riserDeck', 'riser-deck'],
+    ['guardrail', 'guardrail'],
+    ['seatAccessory', 'seat-accessory'],
+  ];
+  for (const [key, category] of fitout)
+    if (getCatalogItem(c.fitout[key])?.category !== category) err(`fitout.${key}`, 'unknown-fitout', `Unknown ${category.replace('-', ' ')} "${c.fitout[key]}".`);
+  for (const spec of SYSTEMS) {
+    const s = c.systems[spec.id];
+    if (!s) {
+      err(`systems.${spec.id}`, 'system-missing', `System "${spec.id}" is missing.`);
+      continue;
+    }
+    if (!['standard', 'premium', 'flagship'].includes(s.tier)) err(`systems.${spec.id}.tier`, 'system-tier', `${spec.label} tier must be standard, premium or flagship.`);
+    if (!finite(s.scale) || s.scale < 0.5 || s.scale > 2) err(`systems.${spec.id}.scale`, 'system-scale', `${spec.label} density must be between 0.5 and 2.`);
+  }
+  if (c.systems.audio && !getAudioProduct(c.systems.audio.product ?? '')) err('systems.audio.product', 'unknown-audio', `Unknown audio array product "${c.systems.audio.product}".`);
 
   if (c.analysis) {
     const w = Object.values(c.analysis.weights);

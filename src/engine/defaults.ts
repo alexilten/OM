@@ -54,6 +54,14 @@ export const OM_300_FLAGSHIP: VenueConfiguration = {
     circulationWidth: 2,
     columns: { layout: 'perimeter', spacingX: 9, spacingY: 10, size: 0.6 },
   },
+  fitout: { riserDeck: 'deck-acoustic', guardrail: 'rail-glass', seatAccessory: 'acc-side-table' },
+  systems: {
+    lighting: { enabled: true, tier: 'premium', scale: 1 },
+    audio: { enabled: true, tier: 'premium', scale: 1, product: 'holoplot-x1' },
+    haptics: { enabled: true, tier: 'premium', scale: 1 },
+    atmospherics: { enabled: true, tier: 'standard', scale: 1 },
+    tracking: { enabled: false, tier: 'standard', scale: 1 },
+  },
   operatingState: 'seated',
   preset: { size: 'om-300', performance: 'cinematic' },
   led: { enabled: true, productId: 'roe-ruby-c-rbc2.6f', extent: 'full', bandElevationDeg: 10, bandRows: 3, placement: 'tangent', jointGap: 0 },
@@ -69,6 +77,7 @@ export function cloneConfig(c: VenueConfiguration): VenueConfiguration {
  * (a band of rows); it becomes `led` with the band extent so the file regenerates as it was saved.
  * Files before Round 04 get the default transformation; files before Round 05 get the default
  * building with its fit check off, so they regenerate the same objects, and the seated state.
+ * Files before Round 06 get the default fit-out (costed only, no new geometry) and every system off.
  */
 export function normalizeConfig(raw: VenueConfiguration & { ledPreview?: { enabled: boolean; productId: string; bandElevationDeg: number; bandRows: number } }): VenueConfiguration {
   const { ledPreview, ...rest } = cloneConfig(raw) as typeof raw;
@@ -79,5 +88,11 @@ export function normalizeConfig(raw: VenueConfiguration & { ledPreview?: { enabl
   c.analysis ??= cloneConfig(OM_300_FLAGSHIP).analysis;
   c.building ??= { ...cloneConfig(OM_300_FLAGSHIP).building, enabled: false };
   c.operatingState ??= 'seated';
+  c.fitout ??= cloneConfig(OM_300_FLAGSHIP).fitout;
+  if (!c.systems) {
+    const systems = cloneConfig(OM_300_FLAGSHIP).systems;
+    for (const s of Object.values(systems)) s.enabled = false;
+    c.systems = systems;
+  }
   return c;
 }

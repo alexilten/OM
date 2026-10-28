@@ -58,6 +58,15 @@ export interface ExportManifest {
     standingCapacity: number;
   };
   building?: { width: number; depth: number; clearHeight: number; fits: boolean; maxRadius: number; columns: number; clashes: number };
+  systems: {
+    units: Record<string, number>;
+    guardrailLength: number;
+    deckArea: number;
+    pickPoints: number;
+    pickLoadKg: number;
+    powerW: number;
+    costUsdPlaceholder: number;
+  };
   immersion?: { average: number; premiumCount: number; warningCount: number; gradeCounts: Record<string, number> };
   sphereRadius: number;
   media: { azimuth0: number; azimuth1: number; elevation0: number; elevation1: number };
@@ -299,6 +308,15 @@ export function buildRhinoDocument(rh: Rhino, model: VenueModel, { state = 'seat
       maxRadius: +model.fit.maxRadius.toFixed(4),
       columns: model.fit.columns.length,
       clashes: model.fit.columns.filter((k) => k.status === 'inside' || k.status === 'service').length,
+    },
+    systems: {
+      units: Object.fromEntries(model.systems.systems.map((x) => [x.id, x.count])),
+      guardrailLength: +model.systems.fitout.guardrailLength.toFixed(4),
+      deckArea: +model.systems.fitout.deckArea.toFixed(3),
+      pickPoints: model.systems.pickPoints,
+      pickLoadKg: Math.round(model.systems.pickLoad),
+      powerW: Math.round(model.systems.totals.power),
+      costUsdPlaceholder: Math.round(model.systems.totals.cost),
     },
     immersion: analysis && {
       average: +analysis.average.toFixed(4),
