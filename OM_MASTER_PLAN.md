@@ -97,7 +97,7 @@ Export: `ExportManifest`.
 | **05** Presets & venue fit | OM 150/300/400/Standing/360 presets × performance presets, project store, duplication, building envelope with columns, fit analysis | Presets use the same engine; save/reopen reproduces geometry | **Done** (see §8e) |
 | **06** Catalog & immersion systems | Standard / Premium / Flagship fit-out (seats, riser decks, guardrails, seat accessories); lighting rigs, immersive audio (HOLOPLOT, d&b Soundscape, L-ISA, generic), haptics, atmospherics and tracking as layers with on/off, tier, density and product | Units placed, counted, costed and exported on their layers; every fixture and speaker has a stable id | **Done** (see §8f) |
 | **07** LED support structure | Generative, productised structure behind the media surface (ribs, ring girders, brackets, splices, shippable segments, schedules, install logistics, service walkway) that carries the audio arrays, lighting truss and hoists | Pick-up schedule includes Round 06 loads; segments respect shipping limits; scales with the media surface | **Done** (see §8g) |
-| **08** Live Show Preview I | EXPERIENCE tab: video upload + shader ambient presets mapped on the sphere, from-seat view, audio upload + synthesised soundscapes, BPM detection / tap tempo, virtual-speaker binaural preview, transport | A/V in sync within one frame over 10 min; BPM within 2 %; 60 fps budget — see `docs/plans/SHOW_PREVIEW_PLAN.md` | Planned |
+| **08** Live Show Preview I | EXPERIENCE tab: video upload + shader ambient presets mapped on the sphere, from-seat view, audio upload + synthesised soundscapes, BPM detection / tap tempo, virtual-speaker binaural preview, transport | A/V in sync within one frame over 10 min; BPM within 2 %; 60 fps budget — see `docs/plans/SHOW_PREVIEW_PLAN.md` | **Done** (see §8h) |
 | **09** Live Show Preview II | Content-driven lighting (zone + palette), beams in haze, modulation matrix (beat / bands / colour → video, lights, haze, haptics), show presets, cue list, clip recording, flash-safety limiter | Washes track adjacent screen colour within 100 ms; one-click presets; flash limiter verified | Planned |
 | **10** CAD deliverables | Exact geometry everywhere practical, named blocks, multiple state exports, schedules (CSV), DXF, GLB, PDF sheets | Export validator extended to every state | Planned |
 | **11** Optimisation | Reverse configuration ("250 premium seats", "fit 30 m wide"), immersion-driven layout search, comparison dashboards | Deterministic, explainable proposals | Planned |
@@ -153,6 +153,8 @@ Export: `ExportManifest`.
 | 2026-10-28 | Every member is split into equal segments no longer than the shipping length and classed by its chord × (sagitta + depth) × width against 20' / 40' containers and a standard trailer | Productised: piece count, splice count, heaviest lift and transport fall out of the geometry |
 | 2026-10-28 | The structure is the rigging backbone: arrays snap into bays; a hoist picks up vertically from a pick beam between the two ribs behind the screen (its chain passes through the LED, flagged), or from a crown grid over the oculus; every hung load is assigned to named ribs and the rib reactions add up exactly to structure + LED + hung loads | "Tie perfectly into the overhead lighting and rigging"; loads stay traceable for a future structural engineer |
 | 2026-10-28 | Public app on GitHub Pages, rebuilt on every push to main | Alex asked for public links (https://alexilten.github.io/OM/) |
+| 2026-10-28 | Venue preset, show, media, sound and playback live in a menu strip under the top bar; notices collapse into one row; left sections start collapsed except Reference sphere; metrics float centred | Alex's Stagework-style layout feedback |
+| 2026-10-28 | Show playback is driven by the audio clock; beat pulses are limited to 3 per second (WCAG 2.3.1) and switch off with reduced motion | One master clock keeps screen, lights and sound locked; photosensitivity safety by default |
 | 2026-10-28 | Standing capacity at 0.5 m² per person on the clear floor of the standing state (0.25 m grid inside the screen clearance) | Conceptual density, to be replaced by the OM team's figure (see §9 question 12) |
 
 ## 8. Round 01 status
@@ -255,6 +257,20 @@ Delivered:
 - Tests: 77 (8 new).
 
 Known limits: loads are summed per rib, not analysed (no wind, seismic, buckling or connection design); bracing, cable trays, LED sub-frames and access ladders are not modelled; walkways are flat rings on alternate girder levels; the crown grid is radial beams to a hub.
+
+## 8h. Round 08 status
+
+Delivered:
+
+- EXPERIENCE tab is live. The show plays on the media surface in a dark room view, with beams from every placed lighting fixture.
+- Top menu strip (all tabs): Venue (named venues, size, performance, alternative name), Show presets (Deep Space 70, Aurora 80, Ocean 60, Pulse 124, Cathedral 60, Calibration 60 BPM), Media, Sound and the transport (play / pause, stop, time, beat dots, BPM). Using any show control opens EXPERIENCE; leaving the tab stops the sound.
+- `src/show/`: `timing.ts` (beat phase, tap tempo, flash-safe subdivision, BPM and downbeat detection by onset autocorrelation, content mapping), `presets.ts`, `shaders.ts` (six generated looks in GLSL: nebula, aurora, ocean caustics, geometric tunnel, cathedral light, az/el calibration grid), `audio.ts` (Web Audio: limiter, analyser, decoded tracks, six synthesised soundscapes on a lookahead scheduler, up to 16 HRTF virtual speakers at the placed speaker positions), `store.ts`.
+- Media: upload any browser-playable video (it stays in the browser), mapped as Fit screen, Equirect 360 or Dome master. Audio: upload a track (MP3, WAV, AAC, OGG); its tempo and downbeat are detected from the first 90 s, with ½, ×2 and tap to correct.
+- Lights: Follow screen (each fixture takes the colour of the screen sector in front of it, sampled from the video ~10× a second, or the palette for generated looks), Palette (rotates per bar) or Off; pulse, haze and screen brightness sliders; reduced motion. From a seat the floor wash beams are hidden and the rest dimmed so they don't block the view.
+- Layout feedback: notices collapsed into one row, left sections start collapsed except Reference sphere, metrics bar centred, axis legend moved to the top right.
+- Tests: 86 (9 new: BPM 90/120/140 within 1 BPM, downbeat offset, beat phase, tap tempo, flash limit across 40–220 BPM, three mappings, preset references).
+
+Known limits: show settings are not yet saved with alternatives; the binaural preview is a sketch, not an acoustic prediction; brightness is display colour, not calibrated LED nits. Content-driven lighting refinement, cues, modulation and clip recording are Round 09.
 
 ## 9. Open questions for the OM team
 

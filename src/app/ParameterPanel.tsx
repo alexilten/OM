@@ -8,7 +8,7 @@ import { IssueList } from './IssueList';
 import { AnalysisSection, CapacityTarget } from './AnalysisPanel';
 import { LedSection } from './LedPanel';
 import { TransformSection } from './TransformPanel';
-import { BuildingSection, PresetSection } from './VenuePanel';
+import { BuildingSection } from './VenuePanel';
 import { FitoutSection, SystemsSection } from './SystemsPanel';
 import { StructureSection } from './StructurePanel';
 
@@ -155,18 +155,15 @@ export function ParameterPanel() {
   return (
     <aside className="panel params">
       <IssueList />
-      <Section title="Venue preset" defaultOpen={false}>
-        <PresetSection />
+      <Section title="Reference sphere">
+        <SphereSize />
       </Section>
       {transform && (
         <Section title="Transformation">
           <TransformSection />
         </Section>
       )}
-      <Section title="Reference sphere">
-        <SphereSize />
-      </Section>
-      <Section title="Media surface">
+      <Section title="Media surface" defaultOpen={false}>
         <MediaControls />
         <div className="row-label">Content</div>
         <Segmented
@@ -178,12 +175,12 @@ export function ParameterPanel() {
           onChange={setMediaDisplay}
         />
       </Section>
-      <Section title="Floor & horizon">
+      <Section title="Floor & horizon" defaultOpen={false}>
         {FLOOR.map((f) => (
           <ParamField key={f.path} spec={f} />
         ))}
       </Section>
-      <Section title="Seating">
+      <Section title="Seating" defaultOpen={false}>
         <div className="row-label">Seat product</div>
         <select value={config.seating.productId} onChange={(e) => setParam('seating.productId', e.target.value)}>
           {SEATING_PRODUCTS.map((p) => (
@@ -206,7 +203,7 @@ export function ParameterPanel() {
       <Section title="Support structure & rigging" defaultOpen={false}>
         <StructureSection />
       </Section>
-      <Section title="Immersion analysis">
+      <Section title="Immersion analysis" defaultOpen={false}>
         <AnalysisSection />
       </Section>
       <Section title="Stage" defaultOpen={false}>
@@ -239,7 +236,7 @@ export function ParameterPanel() {
           <ParamField key={f.path} spec={f} />
         ))}
       </Section>
-      <Section title="Section">
+      <Section title="Section" defaultOpen={false}>
         <SectionControls />
       </Section>
     </aside>

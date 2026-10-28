@@ -97,6 +97,8 @@ export function Viewport() {
   const R = useStudio((s) => s.model.config.sphere.radius);
   const floorZ = useStudio((s) => s.model.config.floor.mainFloorElevation);
   const select = useStudio((s) => s.select);
+  // The show is watched in a dark room: dim the work lights so the screen and beams carry the scene.
+  const show = useStudio((s) => s.workspace === 'EXPERIENCE');
   return (
     <Canvas
       shadows
@@ -105,11 +107,11 @@ export function Viewport() {
       camera={{ fov: 50, near: 0.05, far: 2000, position: [-20, 16, 24] }}
       onPointerMissed={() => select(null)}
     >
-      <color attach="background" args={['#f2f3f5']} />
-      <hemisphereLight args={['#ffffff', '#d9d4cc', 1.1]} />
+      <color attach="background" args={[show ? '#05060a' : '#f2f3f5']} />
+      <hemisphereLight args={['#ffffff', '#d9d4cc', show ? 0.12 : 1.1]} />
       <directionalLight
         position={[-R, 2.2 * R, R]}
-        intensity={1.4}
+        intensity={show ? 0.08 : 1.4}
         castShadow
         shadow-mapSize={[2048, 2048]}
         shadow-camera-left={-R * 1.4}
@@ -118,7 +120,7 @@ export function Viewport() {
         shadow-camera-bottom={-R * 1.4}
         shadow-bias={-0.0004}
       />
-      <directionalLight position={[R, R, -R]} intensity={0.35} />
+      <directionalLight position={[R, R, -R]} intensity={show ? 0.05 : 0.35} />
       <VenueScene />
       <Grid
         position={[0, floorZ - 0.32, 0]}

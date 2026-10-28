@@ -9,6 +9,7 @@ import { tryGenerateVenue } from '../engine/model';
 import { DEFAULT_SECTION, type SectionSettings } from '../engine/section';
 import type { Issue, VenueConfiguration, VenueModel } from '../engine/types';
 import type { DisplayUnit } from '../engine/units';
+import { useShow } from '../show/store';
 
 export type ViewName = 'iso' | 'top' | 'front' | 'side' | 'audience' | 'reset';
 export type MediaDisplay = 'calibration' | 'neutral';
@@ -180,7 +181,11 @@ export const useStudio = create<StudioState>((set, get) => {
     select: (selectedId) => set({ selectedId }),
     setMediaDisplay: (mediaDisplay) => set({ mediaDisplay }),
     // Only TRANSFORM shows a moved pose; other workspaces always show the seated state.
-    setWorkspace: (workspace) => set({ workspace, heatmap: workspace === 'ANALYZE', ...(workspace === 'TRANSFORM' ? {} : { transformT: restT(get().model), playing: 0 as const }) }),
+    setWorkspace: (workspace) => {
+      // Leaving the show tab stops the sound.
+      if (workspace !== 'EXPERIENCE') useShow.getState().stop();
+      set({ workspace, heatmap: workspace === 'ANALYZE', ...(workspace === 'TRANSFORM' ? {} : { transformT: restT(get().model), playing: 0 as const }) });
+    },
     setFov: (fov) => set({ fov }),
     requestView: (name) => set({ view: { name, nonce: get().view.nonce + 1 }, seatView: null }),
     viewFromSeat: (seatId) => set({ seatView: seatId ? { seatId } : null }),

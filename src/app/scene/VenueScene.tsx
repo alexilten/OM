@@ -10,6 +10,7 @@ import { poseAt, type Pose, type TransformationModel } from '../../engine/kineti
 import type { Geometry, VenueObject, Vec3 } from '../../engine/types';
 import { ledUnitColor } from '../ledColors';
 import { isLayerVisible, useStudio } from '../store';
+import { ShowBeams, ShowSurface } from './ShowScene';
 import { annularSectorGeometry, blockGeometry, boxGeometry, calibrationTexture, curvePoints, frameMatrix, sphereGraticule, spherePatchGeometry } from './threeGeometry';
 
 const COLORS = {
@@ -302,6 +303,7 @@ export function VenueScene() {
   const t = useStudio((s) => s.transformT);
   const pose = useMemo(() => (tr && t > 0 ? poseAt(tr, t) : null), [tr, t]);
   const offsetOf = useOffsets(tr, pose);
+  const show = useStudio((s) => s.workspace === 'EXPERIENCE');
 
   const byBlock = useMemo(() => {
     const m = new Map<string, VenueObject[]>();
@@ -341,7 +343,8 @@ export function VenueScene() {
   return (
     <group rotation={[-Math.PI / 2, 0, 0]}>
       {shown(model.objects.find((o) => o.id === 'ref.sphere')!) && <ReferenceSphere R={model.config.sphere.radius} />}
-      {shown(media) && <MediaSurface o={media} />}
+      {show ? <ShowSurface o={media} /> : shown(media) && <MediaSurface o={media} />}
+      {show && <ShowBeams />}
       {solids.filter(({ o }) => shown(o)).map(({ o, geo, color }) => (
         // Clear columns are ghosted so they do not hide the venue; clashing ones stay solid.
         <Solid key={o.id} o={o} geo={geo} color={color} offset={offsetOf(o.id)} opacity={(o.category === 'Column' && o.metadata.fit_status === 'clear') || o.category === 'SafetyVolume' ? 0.25 : 1} />
