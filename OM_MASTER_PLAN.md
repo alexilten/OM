@@ -1,0 +1,151 @@
+# OM Studio — Master Plan
+
+Confidential. Living document; update the **Decisions** and **Status** sections every round.
+
+Last updated: 2026-10-28 (Round 00 complete, Round 01 complete pending review).
+
+---
+
+## 1. Product objectives
+
+OM Studio is a browser-based parametric design tool for OM immersive venues (target reference:
+≈300 seated / ≈500 standing). One parametric system, anchored at the centre of a reference sphere,
+generates the media surface, audience, stage, machinery and envelope, and exports professional Rhino
+geometry.
+
+The tool must let a designer:
+
+1. Shape a **true spherical media surface** and see its consequences immediately.
+2. Lay out **premium seating** at real product dimensions and measure viewing quality per seat.
+3. Compare **real LED construction strategies** against the ideal sphere (deviation, counts, pixels, weight, power).
+4. Animate **venue transformation** (seated → standing) with physically coherent moving components.
+5. Cut **sections**, check **fit in existing buildings**, save and compare **alternatives**.
+6. **EXPORT RHINO**: exact, layered, metadata-rich `.3dm` files that match the live configuration.
+
+Non-goals for now: certified engineering, acoustic simulation, cost estimating without quotes, AI-generated geometry.
+
+## 2. Coordinate system (non-negotiable)
+
+- Right-handed, **Z up**, **metres** internally (feet only at the UI boundary).
+- **(0, 0, 0) = reference sphere centre = reference eye point.**
+- **+X** audience right, **+Y** forward (performance direction), **+Z** up.
+- Azimuth θ from +Y towards +X; elevation φ from the equator: `P(θ, φ) = (R cosφ sinθ, R cosφ cosθ, R sinφ)`.
+- Every subsystem builds in this frame. The viewport rotates one group −90° about X for Three.js (Y up);
+  the Rhino export writes engine coordinates unchanged.
+
+Implemented in `src/engine/coordinates.ts`.
+
+## 3. Technical architecture
+
+```
+VenueConfiguration (JSON, the only source of truth)
+        │  validateConfig → errors block regeneration
+        ▼
+generateVenue()  ─────────────────────────────────────────────────────────────┐
+  1 Geometry engine        coordinates, units, layers, ids                     │
+  2 Spherical media        reference sphere, exact NURBS patch, edges, metrics │
+  3 LED panelization       (R01: tangent preview band; R03: full)              │
+  4 Seating generator      rows, tiers, seats, eye points                      │
+  5 Immersion analysis     (R02)                                               │
+  6 Stage generator        (R01: platform)                                     │
+  7 Transformation engine  (R04)                                               │
+  8 Architectural envelope (R01: design envelope + slab; R05: building fit)    │
+  9 Asset library          src/library/* with per-value verification status    │
+        ▼                                                                      │
+VenueModel { objects[], blocks[], seats[], metrics[], issues[] }               │
+        ├──► Viewport (React Three Fiber) — display tessellation only          │
+        └──► 10 CAD export (rhino3dm) — exact geometry, same model ────────────┘
+```
+
+| Concern | Choice | Why |
+|---|---|---|
+| Frontend | React 19 + TypeScript + Vite | Typed, fast iteration, small toolchain. |
+| 3D | Three.js via React Three Fiber + drei | Instancing for seats/cabinets, clipping planes for sections, good camera tools. |
+| State | Zustand store holding the configuration, last valid model, UI state | Simple; the model is regenerated synchronously (≈3.5 ms for OM 300 in Node). Move to a Web Worker when LED panelization makes it slow. |
+| Geometry | Pure TS engine with **neutral geometry descriptors** (`spherePatch`, `annularSector`, `blockInstance`, …) | Each descriptor maps to exact CAD and to a display mesh; neither is authoritative. |
+| LED panelization (R03) | Per-product strategies: faceted tangent tiling by latitude bands, single-axis curved bands (conical approximation), flexible module tessellation, vendor-spherical (vendor tile grid). Each returns cabinets with true dimensions + deviation/gap fields. | Never stretch cabinets; compare strategies honestly. |
+| Audience analysis (R02) | Deterministic per-seat metrics (distance to origin, H/V field of view of visible media, visible-surface fraction by ray sampling, head-turn angle, incidence, obstruction by head envelope, vertical comfort) combined with **user-visible weights**. | Transparent, traceable; weights evolve with tests. |
+| Kinematics (R04) | Kinetic assemblies with explicit states, axes, travel, envelopes; timeline = state machine of keyframed phases; swept-volume AABB/OBB collision checks. | Components move along explicit paths, never morph. |
+| Rhino export | `rhino3dm` (wasm) in browser and Node; Rhino.Compute later for trims/booleans/section caps | Verified this round: exact NURBS, blocks, layers, user strings. |
+| Persistence | Configuration JSON (download/open now; project store + alternatives in R05). The full config is also embedded in every `.3dm`. | Reproducible: reopening regenerates identical geometry and ids. |
+| Confidentiality | No CDN fonts/HDRIs/analytics; rhino3dm wasm bundled locally; robots `noindex`. | Brief §29.10. |
+
+### Stable identifiers
+
+Ids are derived from configuration structure (`seat.C.07`, `tier.C`, `led.r1.c042`, `media.ideal`), so the
+same configuration always yields the same ids. Round 04 kinetic assemblies will key off these.
+
+## 4. Data model (implemented subset in `src/engine/types.ts`)
+
+`VenueConfiguration` → `SphereDefinition`, `MediaSurfaceDefinition`, `FloorDefinition`, `SeatingLayout`,
+`StageDefinition`, `EnvelopeDefinition`, `LedPreviewDefinition`.
+Library: `SeatingProduct`, `LedProduct` with `SpecValue {value, status: manufacturer|secondary|placeholder|conceptual, source}`.
+Generated: `VenueModel`, `VenueObject`, `BlockDefinition`, `SeatRecord` (= `AudienceEyePoint`), `Metric` (quality: exact|derived|estimate|conceptual), `Issue`.
+Export: `ExportManifest`.
+
+Still to add: `LEDAssembly` (R03), `ImmersionAnalysis` (R02), `KineticAssembly` + `TransformationState` (R04), `BuildingEnvelope` (R05).
+
+## 5. Development rounds and acceptance criteria
+
+| Round | Scope | Acceptance (must be demonstrated) | Status |
+|---|---|---|---|
+| **00** Research & architecture | Brief review, product research, architecture, data model, this plan | Research notes with verified vs unknown data; risks listed | **Done** — `docs/research/ROUND_00_RESEARCH.md` |
+| **01** Spherical PoC | Origin, reference sphere, exact media patch with az/el limits, floor elevation, simple stage, basic tiered seating, orbit camera, section cut, `.3dm` export | Radius change regenerates everything; surface stays spherical (tested to 1e-10 m); floor change never moves the origin; seat count = generated objects; `.3dm` opens with metres, layers, blocks, metadata, correct coordinates (independent Python check) | **Done** (see §8) |
+| **02** Seating & experience | Seat product system, generative tiers with accessibility positions, capacity target solver, sightlines (head-clearance proxies, C-value later), immersion scoring + heatmap, view-from-seat FOV | Heatmap responds logically to geometry; every score traceable to its inputs; capacity target never yields impossible layouts | Next |
+| **03** LED systems | Panelization strategies for families 01–05, deviation/gap visualisation, counts, resolution, weight, power, alternatives when curvature fails | Cabinets keep true size; ideal vs built difference shown and quantified | Planned |
+| **04** Transformation | Kinetic assemblies (retractable banks, lifts, translating rows, stage lifts), state machine, bottom timeline, playback, collision/clearance checks, section animation | Explicit paths; forward/reverse; audience cleared before motion; conflicts flagged; machinery marked conceptual | Planned |
+| **05** Presets & venue fit | OM 150/300/400/Standing/360 presets × performance presets, project store, duplication, building envelope with columns, fit analysis | Presets use the same engine; save/reopen reproduces geometry | Planned |
+| **06** CAD deliverables | Exact geometry everywhere practical, named blocks, multiple state exports, schedules (CSV), DXF, GLB, PDF sheets | Export validator extended to every state | Planned |
+| **07** Optimisation | Reverse configuration ("250 premium seats", "fit 30 m wide"), immersion-driven layout search, comparison dashboards | Deterministic, explainable proposals | Planned |
+
+## 6. Known risks
+
+| # | Risk | Impact | Mitigation |
+|---|---|---|---|
+| R1 | Purpose-built spherical LED vendors (KM, Cosm, Unilumin) publish almost no cabinet data | Family 04 numbers are placeholders; comparisons could mislead | Status badges everywhere; request NDA datasheets; keep family 04/05 marked conceptual |
+| R2 | Conventional cabinets are single-axis | Faceting gaps/deviation may be visible at OM viewing distances (eye ≈ 1–10 m from screen) | Quantify in R03 (gap/deviation maps, pixel-pitch vs distance); test with physical mock-up |
+| R3 | `rhino3dm` cannot trim/boolean/offset | Screen openings, section caps and solid unions need another path | Untrimmed iso-patches cover the core; Rhino.Compute (authorised server, confidential) or RhinoCommon plug-in later |
+| R4 | Immersion scoring has no validated standard | Scores could be over-trusted | Expose every sub-metric and weight; label as design heuristic; calibrate with audience studies |
+| R5 | Transformable machinery is unengineered | Animations could be read as feasible | Conceptual status on every kinetic assembly; collision checks only geometric; consultant review (Gala/Figueras) |
+| R6 | Seating dimensions mostly placeholders | Capacity numbers shift when real data arrives | Library values carry status; capacity metric labelled by product status; obtain datasheets |
+| R7 | Single-thread regeneration cost grows with LED tiling (thousands of cabinets) | UI lag | Per-subsystem memoisation, Web Worker, instancing (already used) |
+| R8 | Confidentiality | Public exposure of concept | No third-party runtime requests; repository must be private before pushing (it was public on 2026-10-28) |
+| R9 | Life-safety/egress not modelled | Seat layouts may be non-compliant | Validator warnings (aisle width, riser) now; egress module later; never claim compliance |
+
+## 7. Decisions made
+
+| Date | Decision | Reason |
+|---|---|---|
+| 2026-10-28 | Engine is pure TypeScript, independent of Three.js | Same model drives viewport and CAD; testable in Node |
+| 2026-10-28 | Media surface exported as an **untrimmed rational NURBS** iso-patch whose domain equals [θ0, θ1] × [φ0, φ1] in radians | Exact sphere without trimming; designers can read angles from the surface domain in Rhino |
+| 2026-10-28 | Rows are arcs about a movable seating layout origin `(0, focusY)`, not about the sphere centre | Lets rows face the stage while keeping eye points near the sphere origin; brief warns against forcing concentric arcs |
+| 2026-10-28 | Seats that violate clearance are dropped and counted, never squeezed | "Do not create impossible layouts" |
+| 2026-10-28 | Seats and LED cabinets are Rhino blocks; per-instance metadata in user strings | Light files, editable definitions |
+| 2026-10-28 | Every layer in the hierarchy is created even when empty | Stable layer structure across rounds |
+| 2026-10-28 | OM 300 default: R = 13 m, 220° × (−7.5° … 72°), floor −1.8 m, 12 rows, Figueras Smart 13033 → 304 seats | Starting point near the pitch target; not a design recommendation |
+| 2026-10-28 | System fonts only; no CDN assets | Confidentiality and offline use |
+
+## 8. Round 01 status
+
+Delivered:
+
+- `src/engine/*` — coordinates, validation, sphere/media, seating, stage/envelope, LED preview band, sections, units, model assembly.
+- `src/library/*` — 5 seating and 5 LED entries with sources and per-value status.
+- `src/export/rhino.ts` — `.3dm` writer (browser button and `npm run export:sample`).
+- `scripts/validate_3dm.py` — independent check (units, 59 layers, object/layer counts, block instances, exact-sphere sampling of the media surface, origin/seat/stage coordinates, stage dimensions, tier heights, envelope containment).
+- `tests/*` — 14 tests: spherical exactness, origin invariance, regeneration, seat counts/footprints, clearance, determinism, validation, units, section, export round-trip.
+- UI: layer panel, parameter panel with sliders + exact inputs + per-parameter reset, linked radius/diameter/circumference, symmetric azimuths, m/ft, issues list, metrics with quality badges, view presets, seat selection with VIEW FROM THIS SEAT and FOV, longitudinal/transverse/plan section with exact sphere cut line, calibration-grid media content, save/open JSON, EXPORT RHINO.
+
+Known Round 01 limitations: section cuts are not capped (hollow solids); seats are proxy massing at true
+footprint; LED band is a preview, not panelization; workspace tabs other than DESIGN are disabled.
+
+## 9. Open questions for the OM team
+
+1. **Pitch deck**: please share it; Round 02 seating/stage presets should match its diagrams.
+2. **Screen-to-audience distance**: what minimum eye-to-LED distance is acceptable at 2.6 mm pitch? (Drives `screenClearance`, currently 1.5 m.)
+3. **Horizon**: should the reference eye point (sphere centre) sit at seated eye height of the central rows (current default), or above the audience?
+4. **Stage relationship**: should the stage cut into the media surface (opening) or sit in front of it? Openings need trimming (Rhino.Compute).
+5. **LED vendors**: can we request NDA datasheets from Konica Minolta, Cosm and Unilumin, and confirm ROE's Ruby-C step size and power figures?
+6. **Seating**: which Figueras/Ferco models are on the shortlist, so placeholders can be replaced?
+7. **Rhino**: which Rhino version do your teams use, and is an internal Rhino.Compute server acceptable for confidential geometry?
+8. **Previous tools**: can any Stagework/ManicAI source or exports be shared for reuse (UI patterns, layer conventions)?
