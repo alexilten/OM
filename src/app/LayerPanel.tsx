@@ -1,8 +1,9 @@
 import { useMemo, useState } from 'react';
 import { LAYERS, TOP_LEVEL_LAYERS } from '../engine/layers';
 import { isLayerVisible, useStudio } from './store';
+import { ProjectPanel } from './VenuePanel';
 
-export function LayerPanel() {
+export function LayerPanel({ onCompare }: { onCompare: () => void }) {
   const model = useStudio((s) => s.model);
   const vis = useStudio((s) => s.layerVisible);
   const toggle = useStudio((s) => s.toggleLayer);
@@ -20,6 +21,7 @@ export function LayerPanel() {
 
   return (
     <aside className="panel left">
+      <ProjectPanel onCompare={onCompare} />
       <div className="panel-heading">Layers</div>
       <div className="layer-tree">
         {TOP_LEVEL_LAYERS.map((top) => {

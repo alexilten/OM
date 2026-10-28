@@ -5,6 +5,7 @@
  */
 import { getSeatingProduct } from '../library/seating';
 import { architectureMetrics, architectureObjects, stageObjects } from './architecture';
+import { generateBuilding } from './building';
 import { LAYERS } from './layers';
 import { generateTransformation } from './kinetics';
 import { generateLed } from './led';
@@ -38,7 +39,9 @@ export function generateVenue(config: VenueConfiguration): VenueModel {
   const base = [...referenceObjects(config), ...mediaObjects(config), ...stage.objects, ...seating.objects, ...led.objects, ...architectureObjects(config)];
   const kin = generateTransformation(config, base, seating.seats);
   issues.push(...kin.issues);
-  const objects = [...base, ...kin.objects];
+  const building = generateBuilding(config);
+  issues.push(...building.issues);
+  const objects = [...base, ...kin.objects, ...building.objects];
 
   const known = new Set(LAYERS.map((l) => l.path));
   for (const o of objects) if (!known.has(o.layer)) throw new Error(`Object ${o.id} uses unknown layer ${o.layer}`);
@@ -83,8 +86,9 @@ export function generateVenue(config: VenueConfiguration): VenueModel {
     blocks: [...seating.blocks, ...led.blocks],
     led: led.summary,
     seats,
-    metrics: [...mediaMetrics(config), ...led.metrics, ...audience, ...kin.metrics, ...architectureMetrics(config)],
+    metrics: [...mediaMetrics(config), ...led.metrics, ...audience, ...kin.metrics, ...architectureMetrics(config), ...building.metrics],
     transformation: kin.model,
+    fit: building.fit,
     issues,
   };
 }

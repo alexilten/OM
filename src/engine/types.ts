@@ -9,6 +9,7 @@
 import type { AnalysisSettings } from './immersion';
 import type { LedSummary } from './led';
 import type { TransformationModel } from './kinetics';
+import type { BuildingFit } from './building';
 
 export type Vec3 = [number, number, number];
 
@@ -93,7 +94,7 @@ export interface SeatingLayout {
   screenClearance: number;
 }
 
-export type StageType = 'minimal' | 'concert' | 'cinematic' | 'central' | 'custom';
+export type StageType = 'minimal' | 'concert' | 'cinematic' | 'proscenium' | 'central' | 'custom';
 
 export interface StageDefinition {
   type: StageType;
@@ -152,6 +153,43 @@ export interface TransformationDefinition {
   foldS: number;
 }
 
+/**
+ * A simplified existing building the venue is placed in (Round 05 venue fit). Positions are in venue
+ * coordinates: the building rectangle is centred at (offsetX, offsetY), axis-aligned, and the
+ * structural floor is an elevation relative to the sphere origin like every other z.
+ */
+export interface BuildingDefinition {
+  enabled: boolean;
+  /** Clear inside width (X) and depth (Y), wall face to wall face. */
+  width: number;
+  depth: number;
+  /** Clear height from the structural floor to the underside of the roof structure. */
+  clearHeight: number;
+  /** Top of the existing structural floor. */
+  floorElevation: number;
+  offsetX: number;
+  offsetY: number;
+  /** Walkway kept clear between the venue's design envelope and the walls. */
+  circulationWidth: number;
+  columns: {
+    layout: 'none' | 'perimeter' | 'grid';
+    /** Centre-to-centre spacing along X and Y. */
+    spacingX: number;
+    spacingY: number;
+    /** Square column section. */
+    size: number;
+  };
+}
+
+/** The two end states of the transformation. */
+export type VenueState = 'seated' | 'standing';
+
+/** Where a configuration came from; edits after applying a preset keep this as a record. */
+export interface PresetOrigin {
+  size: string;
+  performance: string;
+}
+
 export interface VenueConfiguration {
   schemaVersion: 1;
   id: string;
@@ -164,6 +202,10 @@ export interface VenueConfiguration {
   envelope: EnvelopeDefinition;
   led: LedSystemDefinition;
   transformation: TransformationDefinition;
+  building: BuildingDefinition;
+  /** The state the venue is shown and exported in outside the TRANSFORM timeline. */
+  operatingState: VenueState;
+  preset?: PresetOrigin;
   /** Immersion weights and ramps. Optional so Round 01 files still open; defaults apply when absent. */
   analysis?: AnalysisSettings;
 }
@@ -360,4 +402,6 @@ export interface VenueModel {
   led?: LedSummary;
   /** Kinetic assemblies and the seated → standing sequence, when enabled. */
   transformation?: TransformationModel;
+  /** Building fit, when a building is defined. */
+  fit?: BuildingFit;
 }

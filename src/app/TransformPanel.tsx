@@ -25,11 +25,13 @@ export function TransformSection() {
   const tr = useStudio((s) => s.config.transformation);
   const model = useStudio((s) => s.model.transformation);
   const setParam = useStudio((s) => s.setParam);
+  const setParams = useStudio((s) => s.setParams);
+  const operatingState = useStudio((s) => s.config.operatingState);
   const setTransformT = useStudio((s) => s.setTransformT);
   const select = useStudio((s) => s.select);
   return (
     <>
-      <Toggle checked={tr.enabled} label="Transformable venue" onChange={(v) => setParam('transformation.enabled', v)} />
+      <Toggle checked={tr.enabled} label="Transformable venue" onChange={(v) => setParams(v ? [['transformation.enabled', true]] : [['transformation.enabled', false], ['operatingState', 'seated']])} />
       {tr.enabled && (
         <>
           <div className="row-label">Seating</div>
@@ -59,6 +61,15 @@ export function TransformSection() {
       )}
       {model && (
         <>
+          <div className="row-label">Show and export as</div>
+          <Segmented
+            value={operatingState}
+            options={[
+              { value: 'seated', label: 'Seated' },
+              { value: 'standing', label: 'Standing' },
+            ]}
+            onChange={(v) => setParam('operatingState', v)}
+          />
           <div className="coverage three">
             <div>
               <strong>{formatTime(model.duration)}</strong>
