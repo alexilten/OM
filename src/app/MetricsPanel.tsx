@@ -3,13 +3,14 @@ import type { Metric } from '../engine/types';
 import { formatArea, formatLength } from '../engine/units';
 import { useStudio } from './store';
 
+const MM_KEYS = new Set(['led.deviation', 'led.gap', 'led.overlap', 'led.step']);
 const QUALITY_LABEL = { exact: 'exact', derived: 'derived', estimate: 'est.', conceptual: 'concept' } as const;
 
 function formatMetric(m: Metric, units: 'm' | 'ft'): string {
   if (typeof m.value === 'string') return m.unit === 'm' && units === 'm' ? `${m.value} m` : m.value;
   switch (m.unit) {
     case 'm':
-      return m.key === 'led.deviation' ? `${(m.value * 1000).toFixed(1)} mm` : formatLength(m.value, units);
+      return MM_KEYS.has(m.key) ? `${(m.value * 1000).toFixed(1)} mm` : formatLength(m.value, units);
     case 'm2':
       return formatArea(m.value, units);
     case 'deg':

@@ -40,6 +40,15 @@ export interface ExportManifest {
   countsByKind: Record<string, number>;
   blocks: { name: string; instances: number }[];
   seatCount: number;
+  led?: {
+    productId: string;
+    strategy: string;
+    count: number;
+    unitTypes: number;
+    unit: { w: number; h: number; d: number };
+    maxDeviation: number;
+    coverage: number;
+  };
   immersion?: { average: number; premiumCount: number; warningCount: number; gradeCounts: Record<string, number> };
   sphereRadius: number;
   media: { azimuth0: number; azimuth1: number; elevation0: number; elevation1: number };
@@ -242,6 +251,15 @@ export function buildRhinoDocument(rh: Rhino, model: VenueModel, { state = 'curr
     countsByKind,
     blocks: [...instancesPerBlock].map(([name, instances]) => ({ name, instances })),
     seatCount: objects.filter((o) => o.category === 'Seat').length,
+    led: model.led && {
+      productId: model.led.product.id,
+      strategy: model.led.strategy,
+      count: model.led.count,
+      unitTypes: model.led.unitTypes,
+      unit: { w: model.led.product.cabinetWidth.value, h: model.led.product.cabinetHeight.value, d: model.led.product.cabinetDepth.value },
+      maxDeviation: model.led.maxDeviation,
+      coverage: model.led.coverage,
+    },
     immersion: analysis && {
       average: +analysis.average.toFixed(4),
       premiumCount: analysis.premiumCount,

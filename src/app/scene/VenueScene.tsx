@@ -2,11 +2,12 @@ import { Line } from '@react-three/drei';
 import type { ThreeEvent } from '@react-three/fiber';
 import { useEffect, useMemo, useRef } from 'react';
 import * as THREE from 'three';
-import { toDeg } from '../../engine/coordinates';
+import { spherePoint, toDeg } from '../../engine/coordinates';
 import { mediaBounds } from '../../engine/media';
 import { sectionPlane, sphereSection } from '../../engine/section';
 import { GRADES } from '../../engine/immersion';
 import type { Geometry, VenueObject, Vec3 } from '../../engine/types';
+import { ledUnitColor } from '../ledColors';
 import { isLayerVisible, useStudio } from '../store';
 import { annularSectorGeometry, blockGeometry, boxGeometry, calibrationTexture, curvePoints, frameMatrix, sphereGraticule, spherePatchGeometry } from './threeGeometry';
 
@@ -80,21 +81,24 @@ function Instances({ objects, geometry, color }: { objects: VenueObject[]; geome
   const select = useStudio((s) => s.select);
   const heatmap = useStudio((s) => s.heatmap);
   const analysis = useStudio((s) => s.analysis);
+  const ledColor = useStudio((s) => s.ledColor);
   useEffect(() => {
     const mesh = ref.current;
     if (!mesh) return;
     const base = new THREE.Color(color);
     const hi = new THREE.Color(COLORS.seatSelected);
     const gradeColor = new Map(GRADES.map((g) => [g.grade, new THREE.Color(g.color)]));
+    const cache = colorCache();
     objects.forEach((o, i) => {
       mesh.setMatrixAt(i, frameMatrix((o.geometry as Extract<Geometry, { kind: 'blockInstance' }>).frame));
       const a = heatmap ? analysis?.seats.get(o.id) : undefined;
-      mesh.setColorAt(i, o.id === selectedId ? hi : a ? gradeColor.get(a.grade)! : base);
+      const led = o.category.startsWith('LED') ? ledUnitColor(o.metadata, ledColor) : undefined;
+      mesh.setColorAt(i, o.id === selectedId ? hi : a ? gradeColor.get(a.grade)! : led ? cache(led) : base);
     });
     mesh.instanceMatrix.needsUpdate = true;
     if (mesh.instanceColor) mesh.instanceColor.needsUpdate = true;
     mesh.computeBoundingSphere();
-  }, [objects, selectedId, color, heatmap, analysis]);
+  }, [objects, selectedId, color, heatmap, analysis, ledColor]);
   return (
     <instancedMesh
       key={objects.length}
@@ -109,6 +113,72 @@ function Instances({ objects, geometry, color }: { objects: VenueObject[]; geome
     >
       <meshStandardMaterial roughness={0.7} metalness={0.05} />
     </instancedMesh>
+  );
+}
+
+const colorCache = () => {
+  const m = new Map<string, THREE.Color>();
+  return (hex: string) => m.get(hex) ?? m.set(hex, new THREE.Color(hex)).get(hex)!;
+};
+
+/** Spherical LED tiles (families 04–05) as one merged mesh; a 3 × 3 grid per tile. */
+const TILE_SEG = 3;
+const TILE_TRIS = TILE_SEG * TILE_SEG * 2;
+
+function LedTiles({ objects }: { objects: VenueObject[] }) {
+  const selectedId = useStudio((s) => s.selectedId);
+  const select = useStudio((s) => s.select);
+  const ledColor = useStudio((s) => s.ledColor);
+  const geo = useMemo(() => {
+    const pos: number[] = [];
+    const nor: number[] = [];
+    const idx: number[] = [];
+    for (const o of objects) {
+      const g = o.geometry as Extract<Geometry, { kind: 'spherePatch' }>;
+      // 5 mm in front of the ideal surface so the tiles do not z-fight with it.
+      const R = g.radius - 0.005;
+      const start = pos.length / 3;
+      for (let j = 0; j <= TILE_SEG; j++)
+        for (let i = 0; i <= TILE_SEG; i++) {
+          const p = spherePoint(R, g.azimuth0 + ((g.azimuth1 - g.azimuth0) * i) / TILE_SEG, g.elevation0 + ((g.elevation1 - g.elevation0) * j) / TILE_SEG);
+          pos.push(...p);
+          nor.push(-p[0] / R, -p[1] / R, -p[2] / R);
+        }
+      const row = TILE_SEG + 1;
+      for (let j = 0; j < TILE_SEG; j++)
+        for (let i = 0; i < TILE_SEG; i++) {
+          const a = start + j * row + i;
+          idx.push(a, a + 1, a + row, a + 1, a + row + 1, a + row);
+        }
+    }
+    const g = new THREE.BufferGeometry();
+    g.setAttribute('position', new THREE.Float32BufferAttribute(pos, 3));
+    g.setAttribute('normal', new THREE.Float32BufferAttribute(nor, 3));
+    g.setAttribute('color', new THREE.Float32BufferAttribute(new Float32Array(pos.length), 3));
+    g.setIndex(idx);
+    return g;
+  }, [objects]);
+  useEffect(() => () => geo.dispose(), [geo]);
+  useEffect(() => {
+    const col = geo.getAttribute('color') as THREE.BufferAttribute;
+    const cache = colorCache();
+    const per = (TILE_SEG + 1) ** 2;
+    objects.forEach((o, t) => {
+      const c = o.id === selectedId ? cache(COLORS.seatSelected) : cache(ledUnitColor(o.metadata, ledColor) ?? COLORS.led);
+      for (let v = 0; v < per; v++) col.setXYZ(t * per + v, c.r, c.g, c.b);
+    });
+    col.needsUpdate = true;
+  }, [geo, objects, selectedId, ledColor]);
+  return (
+    <mesh
+      geometry={geo}
+      onClick={(e) => {
+        e.stopPropagation();
+        if (e.faceIndex != null) select(objects[Math.floor(e.faceIndex / TILE_TRIS)].id);
+      }}
+    >
+      <meshStandardMaterial vertexColors side={THREE.DoubleSide} roughness={0.6} metalness={0.05} />
+    </mesh>
   );
 }
 
@@ -215,6 +285,7 @@ export function VenueScene() {
   );
   const media = model.objects.find((o) => o.id === 'media.ideal')!;
   const eyes = useMemo(() => model.objects.filter((o) => o.category === 'EyePoint'), [model]);
+  const tiles = useMemo(() => model.objects.filter((o) => o.category === 'LEDTile'), [model]);
 
   return (
     <group rotation={[-Math.PI / 2, 0, 0]}>
@@ -228,6 +299,7 @@ export function VenueScene() {
         if (!visible.length) return null;
         return <Instances key={blockId} objects={visible} geometry={blockGeos.get(blockId)!} color={blockId.includes('.led.') ? COLORS.led : COLORS.seat} />;
       })}
+      {tiles.length > 0 && shown(tiles[0]) && <LedTiles objects={tiles} />}
       {lines.filter(({ o }) => shown(o)).map(({ o, pts }) => (
         <Line key={o.id} points={pts} color={lineColor(o)} lineWidth={o.layer.includes('Envelope') ? 0.8 : 1.5} dashed={o.layer.includes('Envelope') || o.id === 'ref.floorline'} dashSize={0.5} gapSize={0.3} />
       ))}

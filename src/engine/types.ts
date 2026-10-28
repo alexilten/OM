@@ -7,6 +7,7 @@
  */
 
 import type { AnalysisSettings } from './immersion';
+import type { LedSummary } from './led';
 
 export type Vec3 = [number, number, number];
 
@@ -110,13 +111,19 @@ export interface EnvelopeDefinition {
   overheadClearance: number;
 }
 
-export interface LedPreviewDefinition {
+export interface LedSystemDefinition {
   enabled: boolean;
   productId: string;
-  /** Elevation of the preview band's centre line, degrees. */
+  /** Whole media surface, or a quick band of rows around one latitude. */
+  extent: 'full' | 'band';
+  /** Elevation of the band's centre line, degrees (band extent only). */
   bandElevationDeg: number;
-  /** Number of cabinet rows in the band. */
+  /** Number of unit rows in the band (band extent only). */
   bandRows: number;
+  /** Flat units: face centres on the sphere (tangent), or pulled forward so faces straddle it (balanced). */
+  placement: 'tangent' | 'balanced';
+  /** Design joint between neighbouring units (m). */
+  jointGap: number;
 }
 
 export interface VenueConfiguration {
@@ -129,7 +136,7 @@ export interface VenueConfiguration {
   seating: SeatingLayout;
   stage: StageDefinition;
   envelope: EnvelopeDefinition;
-  ledPreview: LedPreviewDefinition;
+  led: LedSystemDefinition;
   /** Immersion weights and ramps. Optional so Round 01 files still open; defaults apply when absent. */
   analysis?: AnalysisSettings;
 }
@@ -320,4 +327,6 @@ export interface VenueModel {
   seats: SeatRecord[];
   metrics: Metric[];
   issues: Issue[];
+  /** LED panelization totals, when the LED system is enabled. */
+  led?: LedSummary;
 }

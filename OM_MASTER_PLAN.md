@@ -2,7 +2,7 @@
 
 Confidential. Living document; update the **Decisions** and **Status** sections every round.
 
-Last updated: 2026-10-28 (Rounds 00–01 merged; Round 02 complete pending review).
+Last updated: 2026-10-28 (Rounds 00–02 merged; Round 03 complete pending review).
 
 ---
 
@@ -83,7 +83,7 @@ Library: `SeatingProduct`, `LedProduct` with `SpecValue {value, status: manufact
 Generated: `VenueModel`, `VenueObject`, `BlockDefinition`, `SeatRecord` (= `AudienceEyePoint`), `Metric` (quality: exact|derived|estimate|conceptual), `Issue`.
 Export: `ExportManifest`.
 
-`ImmersionAnalysis` (R02) lives in `src/engine/immersion.ts`; its settings (weights, ramps) are part of `VenueConfiguration.analysis` so saved files reproduce scores. Still to add: `LEDAssembly` (R03), `KineticAssembly` + `TransformationState` (R04), `BuildingEnvelope` (R05).
+`ImmersionAnalysis` (R02) lives in `src/engine/immersion.ts`; its settings (weights, ramps) are part of `VenueConfiguration.analysis` so saved files reproduce scores. The LED system (R03) is `VenueConfiguration.led` plus `src/engine/led.ts`; Round 01–02 files carrying `ledPreview` are migrated on open. Still to add: `KineticAssembly` + `TransformationState` (R04), `BuildingEnvelope` (R05).
 
 ## 5. Development rounds and acceptance criteria
 
@@ -92,7 +92,7 @@ Export: `ExportManifest`.
 | **00** Research & architecture | Brief review, product research, architecture, data model, this plan | Research notes with verified vs unknown data; risks listed | **Done** — `docs/research/ROUND_00_RESEARCH.md` |
 | **01** Spherical PoC | Origin, reference sphere, exact media patch with az/el limits, floor elevation, simple stage, basic tiered seating, orbit camera, section cut, `.3dm` export | Radius change regenerates everything; surface stays spherical (tested to 1e-10 m); floor change never moves the origin; seat count = generated objects; `.3dm` opens with metres, layers, blocks, metadata, correct coordinates (independent Python check) | **Done** (see §8) |
 | **02** Seating & experience | Seat product system, generative tiers with accessibility positions, capacity target solver, sightlines (head-clearance proxies, C-value later), immersion scoring + heatmap, view-from-seat FOV | Heatmap responds logically to geometry; every score traceable to its inputs; capacity target never yields impossible layouts | **Done** except accessibility positions (see §9) |
-| **03** LED systems | Panelization strategies for families 01–05, deviation/gap visualisation, counts, resolution, weight, power, alternatives when curvature fails | Cabinets keep true size; ideal vs built difference shown and quantified | Planned |
+| **03** LED systems | Panelization strategies for families 01–05, deviation/gap visualisation, counts, resolution, weight, power, alternatives when curvature fails | Cabinets keep true size; ideal vs built difference shown and quantified | **Done** (see §8c) |
 | **04** Transformation | Kinetic assemblies (retractable banks, lifts, translating rows, stage lifts), state machine, bottom timeline, playback, collision/clearance checks, section animation | Explicit paths; forward/reverse; audience cleared before motion; conflicts flagged; machinery marked conceptual | Planned |
 | **05** Presets & venue fit | OM 150/300/400/Standing/360 presets × performance presets, project store, duplication, building envelope with columns, fit analysis | Presets use the same engine; save/reopen reproduces geometry | Planned |
 | **06** CAD deliverables | Exact geometry everywhere practical, named blocks, multiple state exports, schedules (CSV), DXF, GLB, PDF sheets | Export validator extended to every state | Planned |
@@ -103,7 +103,7 @@ Export: `ExportManifest`.
 | # | Risk | Impact | Mitigation |
 |---|---|---|---|
 | R1 | Purpose-built spherical LED vendors (KM, Cosm, Unilumin) publish almost no cabinet data | Family 04 numbers are placeholders; comparisons could mislead | Status badges everywhere; request NDA datasheets; keep family 04/05 marked conceptual |
-| R2 | Conventional cabinets are single-axis | Faceting gaps/deviation may be visible at OM viewing distances (eye ≈ 1–10 m from screen) | Quantify in R03 (gap/deviation maps, pixel-pitch vs distance); test with physical mock-up |
+| R2 | Conventional cabinets are single-axis | Faceting gaps/deviation may be visible at OM viewing distances (eye ≈ 1–10 m from screen) | Quantified in R03: at R = 13 m, 500 mm flat cabinets stand off 4.8 mm at the corners and open wedge joints up to 52 mm near the top ring. Next: pixel-pitch vs viewing distance, and a physical mock-up |
 | R3 | `rhino3dm` cannot trim/boolean/offset | Screen openings, section caps and solid unions need another path | Untrimmed iso-patches cover the core; Rhino.Compute (authorised server, confidential) or RhinoCommon plug-in later |
 | R4 | Immersion scoring has no validated standard | Scores could be over-trusted | Expose every sub-metric and weight; label as design heuristic; calibrate with audience studies |
 | R5 | Transformable machinery is unengineered | Animations could be read as feasible | Conceptual status on every kinetic assembly; collision checks only geometric; consultant review (Gala/Figueras) |
@@ -128,6 +128,10 @@ Export: `ExportManifest`.
 | 2026-10-28 | Sightlines use a C-value proxy: height of the eye→stage-front-edge line above the eye of the nearest seat in front, within half a seat width | Standard spectator-sightline practice; the blocking seat is named so the fix is obvious |
 | 2026-10-28 | Capacity target varies only row count and fan angle, runs every candidate through the normal generator, and picks the highest average immersion | Never produces a layout the generator would not; product, pitch and clearance stay the designer's choice |
 | 2026-10-28 | Analysis runs 150 ms after the model settles, not during slider drags | ≈0.12 s for 300 seats; keeps geometry edits fluid |
+| 2026-10-28 | Flat units (families 01–03) are laid in latitude rings that touch at the pole-side corners and open wedge gaps towards the equator; each ring sits at the lowest elevation that clears the ring below | A ring of rectangles approximates a cone, so faces cannot meet along whole edges. Touching on centre lines (Round 01) made faces collide by up to 27 mm, which cannot be built |
+| 2026-10-28 | Families 04–05 are spherical tiles cut from the sphere, one tile type per row, never wider than the nominal panel | Matches how purpose-built domes are made; the cost shows up as tile-type count instead of deviation |
+| 2026-10-28 | Curvature check uses the hinge angle between ring neighbours (≈ w/R, rising towards the poles), solved exactly for the minimum radius | The old 2·atan(w/2ρ) estimate overstated the angle at high latitudes |
+| 2026-10-28 | Units are never stretched; uncovered strips at the top edge and row ends are reported | "Cabinets keep true size" |
 
 ## 8. Round 01 status
 
@@ -156,6 +160,20 @@ Delivered:
 
 Not yet done in Round 02: wheelchair and companion positions (needs the jurisdiction and target count, see §9 question 9); C-value currently targets the stage front edge only, not the screen.
 
+## 8c. Round 03 status
+
+Delivered:
+
+- `src/engine/led.ts` — panelization per family. Rings of true-size flat units (01 faceted, 02 single-axis curved, 03 flexible) with tangent or balanced placement and a design joint gap; spherical tiles (04, 05) cut to the sphere. Every unit carries deviation, widest gap, deepest collision, face step, hinge angles and a curvature verdict; totals cover count, unit types, coverage, resolution, pixels, weight, max/average power, uncovered strips. `compareLedProducts` runs all five library products on the same screen; `minRadiusFor` gives the smallest radius each product can make.
+- OM 300 default (RB-C 2.6F, R = 13 m, full screen): 2,721 cabinets, 96.9 % covered, 19,008 × 6,720 px, 22.6 t, 571 kW max, 4.8 mm max deviation (2.4 mm balanced), wedge joints up to 52 mm, hinge 2.32° in rings and 3.13° between rings, no collisions. RB2.6F (5° hinge) needs R ≥ 6.44 m; family 04 needs 2,856 tiles in 36 types.
+- Curvature failures name the products that would fit and the radius that would make the chosen one fit.
+- UI: LED system panel (product with data-status badge, strategy, extent, placement, joint gap, summary, colour by product / deviation / joints with legend, comparison table that switches product on click). Showing the units hides the ideal surface they sit on.
+- Rhino export: units on `01_MEDIA/LED_Cabinets` (flexible modules on `LED_Modules`) with all measurements as user strings; spherical tiles as exact NURBS sphere patches; LED summary in the manifest.
+- `scripts/validate_3dm.py` — new checks: unit count, metadata, rigid (unscaled) transforms, block matches the product's true size, face-corner deviation equals the reported maximum, tiles are exact sphere patches, tile-type count.
+- Tests: 36 (14 new for LED: rigidity and true size, no collisions in any placement, exact deviation formula, coverage below 100 %, radius response, totals, curvature failure, minimum radius, alternatives, tiles on the sphere, tile width cap at the zenith, comparison, legacy file migration, tile export).
+
+Known limits: deviation is per unit (corner stand-off), so rings show one colour in deviation mode; joints mode shows where it matters. Tiles at the zenith become triangular gores. Substructure, mounting and service access are not modelled. Tile exports are large (≈ 17 MB for 2,856 Breps).
+
 ## 9. Open questions for the OM team
 
 1. **Pitch deck**: please share it; Round 02 seating/stage presets should match its diagrams.
@@ -168,3 +186,4 @@ Not yet done in Round 02: wheelchair and companion positions (needs the jurisdic
 8. **Previous tools**: can any Stagework/ManicAI source or exports be shared for reuse (UI patterns, layer conventions)?
 9. **Accessibility**: which code applies (e.g. ADA, UK Approved Document M, EN 17210) and how many wheelchair/companion positions should OM 300 provide, and where?
 10. **Immersion weights**: do the default weights match the OM team's priorities? The fastest way to calibrate is to rate a handful of seats in a mock-up and fit the ramps to those ratings.
+11. **LED joints**: what wedge joint between faceted cabinets is acceptable at OM viewing distances? It sets whether families 01–02 are viable or 04–05 are required (currently up to 52 mm near the top ring at R = 13 m).

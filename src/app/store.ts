@@ -1,7 +1,8 @@
 import { create } from 'zustand';
-import { cloneConfig, OM_300_FLAGSHIP } from '../engine/defaults';
+import { cloneConfig, normalizeConfig, OM_300_FLAGSHIP } from '../engine/defaults';
 import { analyzeImmersion, DEFAULT_ANALYSIS, type ImmersionAnalysis } from '../engine/immersion';
 import { LAYERS } from '../engine/layers';
+import { compareLedProducts, type LedSummary } from '../engine/led';
 import { tryGenerateVenue } from '../engine/model';
 import { DEFAULT_SECTION, type SectionSettings } from '../engine/section';
 import type { Issue, VenueConfiguration, VenueModel } from '../engine/types';
@@ -10,9 +11,11 @@ import type { DisplayUnit } from '../engine/units';
 export type ViewName = 'iso' | 'top' | 'front' | 'side' | 'audience' | 'reset';
 export type MediaDisplay = 'calibration' | 'neutral';
 export type Workspace = 'DESIGN' | 'EXPERIENCE' | 'TRANSFORM' | 'ANALYZE' | 'EXPORT';
+export type LedColor = 'product' | 'deviation' | 'joints';
 
 /** Layers hidden on first load (still exported). */
-const HIDDEN_BY_DEFAULT = new Set(['01_MEDIA/LED_Cabinets', '07_ANALYSIS/Eye_Points']);
+const HIDDEN_BY_DEFAULT = new Set(['01_MEDIA/LED_Cabinets', '01_MEDIA/LED_Modules', '07_ANALYSIS/Eye_Points']);
+const LED_LAYERS = ['01_MEDIA/LED_Cabinets', '01_MEDIA/LED_Modules'];
 
 export interface SeatView {
   seatId: string;
@@ -37,6 +40,9 @@ interface StudioState {
   /** Immersion analysis of `model`; recomputed shortly after the model settles. */
   analysis: ImmersionAnalysis | null;
   heatmap: boolean;
+  ledColor: LedColor;
+  /** Every library LED product on the current screen; recomputed with the analysis. */
+  ledComparison: LedSummary[] | null;
 
   setParam: (path: string, value: unknown) => void;
   /** Applies several edits as one regeneration (e.g. mirrored azimuths). */
@@ -53,6 +59,9 @@ interface StudioState {
   requestView: (name: ViewName) => void;
   viewFromSeat: (seatId: string | null) => void;
   setHeatmap: (on: boolean) => void;
+  setLedColor: (c: LedColor) => void;
+  /** Shows or hides the LED cabinet and module layers together. */
+  setLedVisible: (on: boolean) => void;
 }
 
 export function getPath(obj: unknown, path: string): unknown {
@@ -92,11 +101,13 @@ export const useStudio = create<StudioState>((set, get) => {
     seatView: null,
     analysis: null,
     heatmap: false,
+    ledColor: 'product',
+    ledComparison: null,
 
     setParam: (path, value) => apply(setPath(get().config, path, value)),
     setParams: (entries) => apply(entries.reduce((c, [p, v]) => setPath(c, p, v), get().config)),
     loadConfig: (c) => {
-      apply({ ...cloneConfig(c), analysis: c.analysis ?? DEFAULT_ANALYSIS });
+      apply({ ...normalizeConfig(c), analysis: c.analysis ?? DEFAULT_ANALYSIS });
       set({ selectedId: null, seatView: null });
     },
     resetParam: (path) => apply(setPath(get().config, path, getPath(OM_300_FLAGSHIP, path))),
@@ -117,16 +128,31 @@ export const useStudio = create<StudioState>((set, get) => {
     requestView: (name) => set({ view: { name, nonce: get().view.nonce + 1 }, seatView: null }),
     viewFromSeat: (seatId) => set({ seatView: seatId ? { seatId } : null }),
     setHeatmap: (heatmap) => set({ heatmap, workspace: heatmap ? 'ANALYZE' : 'DESIGN' }),
+    setLedColor: (ledColor) => {
+      set({ ledColor });
+      if (ledColor !== 'product') get().setLedVisible(true);
+    },
+    setLedVisible: (on) => {
+      const v = { ...get().layerVisible };
+      for (const l of LED_LAYERS) v[l] = on;
+      if (on) v['01_MEDIA'] = true;
+      // Tangent faces sit exactly on the ideal surface, which would hide them; show one or the other.
+      v['01_MEDIA/Ideal_Spherical_Surface'] = !on;
+      set({ layerVisible: v });
+    },
   };
 });
 
-// Analysis takes ~0.1 s for 300 seats, so run it once the model stops changing (e.g. after a drag).
+// Analysis takes ~0.1 s for 300 seats (the LED comparison about as long), so run it once the model stops changing (e.g. after a drag).
 let analysisTimer: ReturnType<typeof setTimeout> | undefined;
 const scheduleAnalysis = () => {
   clearTimeout(analysisTimer);
   analysisTimer = setTimeout(() => {
     const { model } = useStudio.getState();
-    useStudio.setState({ analysis: analyzeImmersion(model, model.config.analysis ?? DEFAULT_ANALYSIS) });
+    useStudio.setState({
+      analysis: analyzeImmersion(model, model.config.analysis ?? DEFAULT_ANALYSIS),
+      ledComparison: model.config.led.enabled ? compareLedProducts(model.config) : null,
+    });
   }, 150);
 };
 useStudio.subscribe((s, prev) => {

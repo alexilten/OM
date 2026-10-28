@@ -4,6 +4,7 @@
  */
 import type { ImmersionAnalysis } from '../engine/immersion';
 import wasmUrl from 'rhino3dm/rhino3dm.wasm?url';
+import { normalizeConfig } from '../engine/defaults';
 import type { VenueConfiguration, VenueModel } from '../engine/types';
 import { validateConfig } from '../engine/validate';
 
@@ -35,7 +36,7 @@ export function saveConfiguration(config: VenueConfiguration) {
 }
 
 export async function openConfiguration(file: File): Promise<VenueConfiguration> {
-  const parsed = JSON.parse(await file.text()) as VenueConfiguration;
+  const parsed = normalizeConfig(JSON.parse(await file.text()));
   if (parsed.schemaVersion !== 1) throw new Error('Unsupported OM Studio configuration version.');
   const errors = validateConfig(parsed).filter((i) => i.severity === 'error');
   if (errors.length) throw new Error(errors.map((e) => e.message).join(' '));

@@ -6,7 +6,7 @@
 import { getSeatingProduct } from '../library/seating';
 import { architectureMetrics, architectureObjects, stageObjects } from './architecture';
 import { LAYERS } from './layers';
-import { generateLedPreview } from './ledPreview';
+import { generateLed } from './led';
 import { mediaMetrics, mediaObjects, referenceObjects, sphereRadiusAt } from './media';
 import { generateSeating } from './seating';
 import type { Issue, Metric, VenueConfiguration, VenueModel } from './types';
@@ -31,7 +31,7 @@ export function generateVenue(config: VenueConfiguration): VenueModel {
 
   const stage = stageObjects(config);
   const seating = generateSeating(config);
-  const led = generateLedPreview(config);
+  const led = generateLed(config);
   issues.push(...stage.issues, ...seating.issues, ...led.issues);
 
   const objects = [...referenceObjects(config), ...mediaObjects(config), ...stage.objects, ...seating.objects, ...led.objects, ...architectureObjects(config)];
@@ -69,6 +69,7 @@ export function generateVenue(config: VenueConfiguration): VenueModel {
     config,
     objects,
     blocks: [...seating.blocks, ...led.blocks],
+    led: led.summary,
     seats,
     metrics: [...mediaMetrics(config), ...led.metrics, ...audience, ...architectureMetrics(config)],
     issues,
