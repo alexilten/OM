@@ -1,6 +1,7 @@
 import rhino3dm from 'rhino3dm/rhino3dm.module.js';
 import { beforeAll, describe, expect, it } from 'vitest';
 import { OM_300_FLAGSHIP } from '../src/engine/defaults';
+import { analyzeImmersion } from '../src/engine/immersion';
 import { LAYERS, rhinoLayerPath } from '../src/engine/layers';
 import { generateVenue } from '../src/engine/model';
 import { exportRhino, type Rhino } from '../src/export/rhino';
@@ -56,5 +57,32 @@ describe('Rhino export', () => {
     }
     const embedded = JSON.parse(json);
     expect(embedded).toEqual(OM_300_FLAGSHIP);
+  });
+
+  it('adds immersion scores to seats and sightlines to 07_ANALYSIS when given an analysis', () => {
+    const model = generateVenue(OM_300_FLAGSHIP);
+    const analysis = analyzeImmersion(model);
+    const { bytes, manifest } = exportRhino(rh, model, { analysis });
+    const doc = rh.File3dm.fromByteArray(bytes);
+    let rays = 0;
+    let targets = 0;
+    let scored = 0;
+    for (let i = 0; i < doc.objects().count; i++) {
+      const a = doc.objects().get(i).attributes();
+      if (a.isInstanceDefinitionObject) continue;
+      const layer = a.getUserString('om.layer');
+      if (layer === '07_ANALYSIS/Sightline_Rays') rays++;
+      if (layer === '07_ANALYSIS/Viewing_Targets') targets++;
+      if (a.getUserString('om.category') === 'Seat') {
+        const id = a.getUserString('om.object_id');
+        expect(Number(a.getUserString('om.immersion_score'))).toBeCloseTo(analysis.seats.get(id)!.score, 4);
+        expect(a.getUserString('om.immersion_grade')).toBe(analysis.seats.get(id)!.grade);
+        scored++;
+      }
+    }
+    expect(rays).toBe(model.seats.length);
+    expect(targets).toBe(1);
+    expect(scored).toBe(model.seats.length);
+    expect(manifest.immersion?.premiumCount).toBe(analysis.premiumCount);
   });
 });

@@ -159,6 +159,33 @@ def main(path):
     outside = [o.Attributes.Name for o in top if any(abs(x) > half + 1e-6 or abs(y) > half + 1e-6 for x, y, _ in exact_points(o.Geometry))]
     rep.check(not outside, f"all objects inside the {2*half:.1f} m design envelope (plan, exact vertices)", ", ".join(outside[:5]))
 
+    imm = manifest.get("immersion")
+    if imm:
+        print("\nImmersion analysis")
+        rays = [o for o in top if o.Attributes.GetUserString("om.category") == "Sightline"]
+        targets = [o for o in top if o.Attributes.GetUserString("om.category") == "ViewingTarget"]
+        rep.check(len(rays) == len(seats), "one sightline ray per seat", f"{len(rays)} rays")
+        rep.check(len(targets) == 1 and isinstance(targets[0].Geometry, r.Point), "one viewing target point")
+        if targets:
+            t = targets[0].Geometry.Location
+            ends = [o.Geometry.PointAtEnd for o in rays]
+            rep.check(all(math.dist((e.X, e.Y, e.Z), (t.X, t.Y, t.Z)) < 1e-9 for e in ends), "every ray ends on the viewing target")
+        seat_xy = {o.Attributes.GetUserString("om.object_id"): (o.Geometry.Xform.M03, o.Geometry.Xform.M13, o.Geometry.Xform.M23) for o in seats}
+        off = [o.Attributes.Name for o in rays
+               if (lambda st, p: math.hypot(st.X - p[0], st.Y - p[1]) > 1.0 or not (0.5 < st.Z - p[2] < 1.6))(o.Geometry.PointAtStart, seat_xy[o.Attributes.GetUserString("om.seat_id")])]
+        rep.check(not off, "every ray starts at a seated eye height above its seat", ", ".join(off[:5]))
+        grades = [(0.8, "excellent"), (0.65, "good"), (0.5, "acceptable"), (0.35, "compromised"), (-1e9, "unacceptable")]
+        scores = []
+        wrong = []
+        for o in seats:
+            sc = float(o.Attributes.GetUserString("om.immersion_score"))
+            scores.append(sc)
+            if o.Attributes.GetUserString("om.immersion_grade") != next(g for lim, g in grades if sc >= lim):
+                wrong.append(o.Attributes.Name)
+        rep.check(not wrong, "seat grades follow the published thresholds", ", ".join(wrong[:5]))
+        avg = sum(scores) / len(scores) if scores else 0
+        rep.check(abs(avg - imm["average"]) < 1e-3, "seat scores average to the manifest figure", f"{avg:.4f} vs {imm['average']}")
+
     print()
     if rep.failures:
         print(f"{rep.failures} check(s) FAILED")

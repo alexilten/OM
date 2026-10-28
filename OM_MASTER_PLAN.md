@@ -2,7 +2,7 @@
 
 Confidential. Living document; update the **Decisions** and **Status** sections every round.
 
-Last updated: 2026-10-28 (Round 00 complete, Round 01 complete pending review).
+Last updated: 2026-10-28 (Rounds 00–01 merged; Round 02 complete pending review).
 
 ---
 
@@ -83,7 +83,7 @@ Library: `SeatingProduct`, `LedProduct` with `SpecValue {value, status: manufact
 Generated: `VenueModel`, `VenueObject`, `BlockDefinition`, `SeatRecord` (= `AudienceEyePoint`), `Metric` (quality: exact|derived|estimate|conceptual), `Issue`.
 Export: `ExportManifest`.
 
-Still to add: `LEDAssembly` (R03), `ImmersionAnalysis` (R02), `KineticAssembly` + `TransformationState` (R04), `BuildingEnvelope` (R05).
+`ImmersionAnalysis` (R02) lives in `src/engine/immersion.ts`; its settings (weights, ramps) are part of `VenueConfiguration.analysis` so saved files reproduce scores. Still to add: `LEDAssembly` (R03), `KineticAssembly` + `TransformationState` (R04), `BuildingEnvelope` (R05).
 
 ## 5. Development rounds and acceptance criteria
 
@@ -91,7 +91,7 @@ Still to add: `LEDAssembly` (R03), `ImmersionAnalysis` (R02), `KineticAssembly` 
 |---|---|---|---|
 | **00** Research & architecture | Brief review, product research, architecture, data model, this plan | Research notes with verified vs unknown data; risks listed | **Done** — `docs/research/ROUND_00_RESEARCH.md` |
 | **01** Spherical PoC | Origin, reference sphere, exact media patch with az/el limits, floor elevation, simple stage, basic tiered seating, orbit camera, section cut, `.3dm` export | Radius change regenerates everything; surface stays spherical (tested to 1e-10 m); floor change never moves the origin; seat count = generated objects; `.3dm` opens with metres, layers, blocks, metadata, correct coordinates (independent Python check) | **Done** (see §8) |
-| **02** Seating & experience | Seat product system, generative tiers with accessibility positions, capacity target solver, sightlines (head-clearance proxies, C-value later), immersion scoring + heatmap, view-from-seat FOV | Heatmap responds logically to geometry; every score traceable to its inputs; capacity target never yields impossible layouts | Next |
+| **02** Seating & experience | Seat product system, generative tiers with accessibility positions, capacity target solver, sightlines (head-clearance proxies, C-value later), immersion scoring + heatmap, view-from-seat FOV | Heatmap responds logically to geometry; every score traceable to its inputs; capacity target never yields impossible layouts | **Done** except accessibility positions (see §9) |
 | **03** LED systems | Panelization strategies for families 01–05, deviation/gap visualisation, counts, resolution, weight, power, alternatives when curvature fails | Cabinets keep true size; ideal vs built difference shown and quantified | Planned |
 | **04** Transformation | Kinetic assemblies (retractable banks, lifts, translating rows, stage lifts), state machine, bottom timeline, playback, collision/clearance checks, section animation | Explicit paths; forward/reverse; audience cleared before motion; conflicts flagged; machinery marked conceptual | Planned |
 | **05** Presets & venue fit | OM 150/300/400/Standing/360 presets × performance presets, project store, duplication, building envelope with columns, fit analysis | Presets use the same engine; save/reopen reproduces geometry | Planned |
@@ -109,7 +109,7 @@ Still to add: `LEDAssembly` (R03), `ImmersionAnalysis` (R02), `KineticAssembly` 
 | R5 | Transformable machinery is unengineered | Animations could be read as feasible | Conceptual status on every kinetic assembly; collision checks only geometric; consultant review (Gala/Figueras) |
 | R6 | Seating dimensions mostly placeholders | Capacity numbers shift when real data arrives | Library values carry status; capacity metric labelled by product status; obtain datasheets |
 | R7 | Single-thread regeneration cost grows with LED tiling (thousands of cabinets) | UI lag | Per-subsystem memoisation, Web Worker, instancing (already used) |
-| R8 | Confidentiality | Public exposure of concept | No third-party runtime requests; repository must be private before pushing (it was public on 2026-10-28) |
+| R8 | Confidentiality | Public exposure of concept | No third-party runtime requests. Alex confirmed on 2026-10-28 that the repository is public by choice |
 | R9 | Life-safety/egress not modelled | Seat layouts may be non-compliant | Validator warnings (aisle width, riser) now; egress module later; never claim compliance |
 
 ## 7. Decisions made
@@ -124,6 +124,10 @@ Still to add: `LEDAssembly` (R03), `ImmersionAnalysis` (R02), `KineticAssembly` 
 | 2026-10-28 | Every layer in the hierarchy is created even when empty | Stable layer structure across rounds |
 | 2026-10-28 | OM 300 default: R = 13 m, 220° × (−7.5° … 72°), floor −1.8 m, 12 rows, Figueras Smart 13033 → 304 seats | Starting point near the pitch target; not a design recommendation |
 | 2026-10-28 | System fonts only; no CDN assets | Confidentiality and offline use |
+| 2026-10-28 | Immersion score = weighted mean of 9 sub-scores, each a linear ramp of one geometric measurement; ramps, weights and thresholds live in the configuration | Every number is traceable and tunable; labelled a design heuristic (R4) |
+| 2026-10-28 | Sightlines use a C-value proxy: height of the eye→stage-front-edge line above the eye of the nearest seat in front, within half a seat width | Standard spectator-sightline practice; the blocking seat is named so the fix is obvious |
+| 2026-10-28 | Capacity target varies only row count and fan angle, runs every candidate through the normal generator, and picks the highest average immersion | Never produces a layout the generator would not; product, pitch and clearance stay the designer's choice |
+| 2026-10-28 | Analysis runs 150 ms after the model settles, not during slider drags | ≈0.12 s for 300 seats; keeps geometry edits fluid |
 
 ## 8. Round 01 status
 
@@ -139,6 +143,19 @@ Delivered:
 Known Round 01 limitations: section cuts are not capped (hollow solids); seats are proxy massing at true
 footprint; LED band is a preview, not panelization; workspace tabs other than DESIGN are disabled.
 
+## 8b. Round 02 status
+
+Delivered:
+
+- `src/engine/immersion.ts` — per-seat measurements from the eye point (field of view filled by screen by solid angle, horizontal/vertical FOV, distance to origin, nearest screen, head turn to stage, sightline C-value, screen centre elevation, mean incidence), linear ramps, weights, grades (excellent ≥ 0.80, good ≥ 0.65, acceptable ≥ 0.50, compromised ≥ 0.35), warnings and the blocking seat. OM 300 default: average 0.69, 193 premium seats (≥ 0.65).
+- `src/engine/capacity.ts` — capacity target: bisects fan angle for each row count, keeps candidates within +5 % of the target, ranks by average immersion, and explains the limit when the target cannot fit.
+- UI: ANALYZE workspace (heatmap + legend), Immersion analysis section (summary, grade bar, weight sliders, reset), Target capacity with Fit, seat panel with the full score breakdown (value, sub-score, weight per metric), the blocking seat as a link and the sightline drawn in the viewport, immersion average and premium count in the metrics bar.
+- Rhino export: seats carry `om.immersion_score`, `om.immersion_grade`, `om.sightline_clearance_m`, `om.sightline_blocked_by`, `om.immersion_warnings`; one line per seat on `07_ANALYSIS/Sightline_Rays`; the stage focus point on `07_ANALYSIS/Viewing_Targets`; summary in the manifest.
+- `scripts/validate_3dm.py` — new checks: one ray per seat, rays end on the target and start at seated eye height, grades follow thresholds, seat scores average to the manifest figure.
+- Tests: 22 (traceability of every score, determinism, single-weight isolation, geometry response, blocking seat in front, capacity feasibility and refusal, export round-trip of scores and rays).
+
+Not yet done in Round 02: wheelchair and companion positions (needs the jurisdiction and target count, see §9 question 9); C-value currently targets the stage front edge only, not the screen.
+
 ## 9. Open questions for the OM team
 
 1. **Pitch deck**: please share it; Round 02 seating/stage presets should match its diagrams.
@@ -149,3 +166,5 @@ footprint; LED band is a preview, not panelization; workspace tabs other than DE
 6. **Seating**: which Figueras/Ferco models are on the shortlist, so placeholders can be replaced?
 7. **Rhino**: which Rhino version do your teams use, and is an internal Rhino.Compute server acceptable for confidential geometry?
 8. **Previous tools**: can any Stagework/ManicAI source or exports be shared for reuse (UI patterns, layer conventions)?
+9. **Accessibility**: which code applies (e.g. ADA, UK Approved Document M, EN 17210) and how many wheelchair/companion positions should OM 300 provide, and where?
+10. **Immersion weights**: do the default weights match the OM team's priorities? The fastest way to calibrate is to rate a handful of seats in a mock-up and fit the ramps to those ratings.

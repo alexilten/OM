@@ -5,9 +5,9 @@ import { useStudio, type Workspace } from './store';
 
 const WORKSPACES: { id: Workspace; round?: string }[] = [
   { id: 'DESIGN' },
-  { id: 'EXPERIENCE', round: 'Round 02' },
+  { id: 'EXPERIENCE', round: 'Round 04' },
   { id: 'TRANSFORM', round: 'Round 04' },
-  { id: 'ANALYZE', round: 'Round 02' },
+  { id: 'ANALYZE' },
   { id: 'EXPORT', round: 'Round 06' },
 ];
 
@@ -20,6 +20,7 @@ export function TopBar() {
   const setParam = useStudio((s) => s.setParam);
   const loadConfig = useStudio((s) => s.loadConfig);
   const workspace = useStudio((s) => s.workspace);
+  const setWorkspace = useStudio((s) => s.setWorkspace);
   const [status, setStatus] = useState<string | null>(null);
   const [busy, setBusy] = useState(false);
   const fileRef = useRef<HTMLInputElement>(null);
@@ -37,7 +38,7 @@ export function TopBar() {
       </div>
       <nav className="workspaces">
         {WORKSPACES.map((w) => (
-          <button key={w.id} className={w.id === workspace ? 'active' : ''} disabled={!!w.round} title={w.round ? `Arrives in ${w.round}` : undefined}>
+          <button key={w.id} className={w.id === workspace ? 'active' : ''} disabled={!!w.round} title={w.round ? `Arrives in ${w.round}` : undefined} onClick={() => setWorkspace(w.id)}>
             {w.id}
           </button>
         ))}
@@ -85,7 +86,9 @@ export function TopBar() {
           onClick={async () => {
             setBusy(true);
             try {
-              const m = await exportRhinoFile(model);
+              // Export the analysis only when it belongs to the current model (it lags edits by ~150 ms).
+              const { analysis } = useStudio.getState();
+              const m = await exportRhinoFile(model, analysis && analysis.seats.size === model.seats.length ? analysis : undefined);
               flash(`Exported ${m.objectCount} objects · ${m.seatCount} seats`);
             } catch (err) {
               flash(`Export failed: ${(err as Error).message}`);

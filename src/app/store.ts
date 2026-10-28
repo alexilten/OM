@@ -1,5 +1,6 @@
 import { create } from 'zustand';
 import { cloneConfig, OM_300_FLAGSHIP } from '../engine/defaults';
+import { analyzeImmersion, DEFAULT_ANALYSIS, type ImmersionAnalysis } from '../engine/immersion';
 import { LAYERS } from '../engine/layers';
 import { tryGenerateVenue } from '../engine/model';
 import { DEFAULT_SECTION, type SectionSettings } from '../engine/section';
@@ -33,6 +34,9 @@ interface StudioState {
   fov: number;
   view: { name: ViewName; nonce: number };
   seatView: SeatView | null;
+  /** Immersion analysis of `model`; recomputed shortly after the model settles. */
+  analysis: ImmersionAnalysis | null;
+  heatmap: boolean;
 
   setParam: (path: string, value: unknown) => void;
   /** Applies several edits as one regeneration (e.g. mirrored azimuths). */
@@ -48,6 +52,7 @@ interface StudioState {
   setFov: (fov: number) => void;
   requestView: (name: ViewName) => void;
   viewFromSeat: (seatId: string | null) => void;
+  setHeatmap: (on: boolean) => void;
 }
 
 export function getPath(obj: unknown, path: string): unknown {
@@ -85,11 +90,13 @@ export const useStudio = create<StudioState>((set, get) => {
     fov: 50,
     view: { name: 'iso', nonce: 0 },
     seatView: null,
+    analysis: null,
+    heatmap: false,
 
     setParam: (path, value) => apply(setPath(get().config, path, value)),
     setParams: (entries) => apply(entries.reduce((c, [p, v]) => setPath(c, p, v), get().config)),
     loadConfig: (c) => {
-      apply(cloneConfig(c));
+      apply({ ...cloneConfig(c), analysis: c.analysis ?? DEFAULT_ANALYSIS });
       set({ selectedId: null, seatView: null });
     },
     resetParam: (path) => apply(setPath(get().config, path, getPath(OM_300_FLAGSHIP, path))),
@@ -105,11 +112,26 @@ export const useStudio = create<StudioState>((set, get) => {
     },
     select: (selectedId) => set({ selectedId }),
     setMediaDisplay: (mediaDisplay) => set({ mediaDisplay }),
-    setWorkspace: (workspace) => set({ workspace }),
+    setWorkspace: (workspace) => set({ workspace, heatmap: workspace === 'ANALYZE' }),
     setFov: (fov) => set({ fov }),
     requestView: (name) => set({ view: { name, nonce: get().view.nonce + 1 }, seatView: null }),
     viewFromSeat: (seatId) => set({ seatView: seatId ? { seatId } : null }),
+    setHeatmap: (heatmap) => set({ heatmap, workspace: heatmap ? 'ANALYZE' : 'DESIGN' }),
   };
 });
+
+// Analysis takes ~0.1 s for 300 seats, so run it once the model stops changing (e.g. after a drag).
+let analysisTimer: ReturnType<typeof setTimeout> | undefined;
+const scheduleAnalysis = () => {
+  clearTimeout(analysisTimer);
+  analysisTimer = setTimeout(() => {
+    const { model } = useStudio.getState();
+    useStudio.setState({ analysis: analyzeImmersion(model, model.config.analysis ?? DEFAULT_ANALYSIS) });
+  }, 150);
+};
+useStudio.subscribe((s, prev) => {
+  if (s.model !== prev.model) scheduleAnalysis();
+});
+scheduleAnalysis();
 
 export const isLayerVisible = (vis: Record<string, boolean>, path: string) => vis[path] !== false && vis[path.split('/')[0]] !== false;

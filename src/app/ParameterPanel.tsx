@@ -6,6 +6,7 @@ import type { StageType } from '../engine/types';
 import { NumberInput, ParamField, Section, Segmented, Toggle, type FieldSpec } from './ui/ParamField';
 import { useStudio } from './store';
 import { IssueList } from './IssueList';
+import { AnalysisSection, CapacityTarget } from './AnalysisPanel';
 
 const F = (path: string, label: string, kind: FieldSpec['kind'], min: number, max: number, step: number, tip: string): FieldSpec => ({ path, label, kind, min, max, step, tip });
 
@@ -185,6 +186,10 @@ export function ParameterPanel() {
         {SEATING.map((f) => (
           <ParamField key={f.path} spec={f} />
         ))}
+        <CapacityTarget />
+      </Section>
+      <Section title="Immersion analysis">
+        <AnalysisSection />
       </Section>
       <Section title="Stage" defaultOpen={false}>
         <div className="row-label">Type</div>
