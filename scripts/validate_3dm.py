@@ -280,6 +280,41 @@ def main(path):
         rep.check(not bld["fits"] or (plan_ok and clashes == 0), "a fit verdict means the envelope is inside the walls and no column clashes",
                   "fits" if bld["fits"] else "does not fit")
 
+    sysm = manifest.get("systems")
+    if sysm:
+        print("\nFit-out and immersion systems")
+        R = config["sphere"]["radius"]
+        service = R + config["envelope"]["serviceZone"]
+        units = [o for o in top if isinstance(o.Geometry, r.InstanceReference) and o.Attributes.GetUserString("om.system")]
+        counts = {}
+        for o in units:
+            sid = o.Attributes.GetUserString("om.system")
+            counts[sid] = counts.get(sid, 0) + 1
+        expected = {k: v for k, v in sysm["units"].items() if k != "haptics"}
+        placed = {k: counts.get(k, 0) for k in expected}
+        # Lighting counts exclude truss metres; every other placed unit is one instance.
+        rep.check(placed == expected, "placed units per system match the manifest", f"{placed} vs {expected}")
+        wrong = []
+        for o in units:
+            x, y, z = exact_points(o.Geometry)[0]
+            d = math.sqrt(x * x + y * y + z * z)
+            cat = o.Attributes.GetUserString("om.category")
+            if cat == "Speaker" and o.Attributes.GetUserString("om.ring") != "zenith" and not (R < d < service):
+                wrong.append(f"{o.Attributes.Name} at {d:.2f}")
+            if cat in ("LightingFixture", "Atmospherics", "Sensor") and d >= R:
+                wrong.append(f"{o.Attributes.Name} outside the sphere")
+        rep.check(not wrong, "speakers sit between the screen and the service zone; fixtures, hazers and sensors inside the sphere", ", ".join(wrong[:5]))
+        rails = [o for o in top if o.Attributes.GetUserString("om.category") == "Guardrail"]
+        def poly_length(g):
+            pts = [g.Point(i) for i in range(g.PointCount)]
+            return sum(math.dist((a.X, a.Y, a.Z), (b.X, b.Y, b.Z)) for a, b in zip(pts, pts[1:]))
+        length = sum(poly_length(o.Geometry) for o in rails if isinstance(o.Geometry, r.PolylineCurve))
+        # The rail is a polyline through the arc, so it is slightly shorter than the arc length.
+        rep.check(abs(length - sysm["guardrailLength"]) <= 0.005 * max(1.0, sysm["guardrailLength"]), f"guardrails total {sysm['guardrailLength']:.2f} m", f"found {length:.3f} m")
+        hoists = [o for o in units if o.Attributes.GetUserString("om.category") == "Hoist"]
+        load = sum(float(o.Attributes.GetUserString("om.pick_load_kg") or 0) for o in hoists)
+        rep.check(all(float(o.Attributes.GetUserString("om.pick_load_kg") or 0) > 0 for o in hoists), f"every hoist carries a pick-up load ({len(hoists)} hoists, {load/1000:.1f} t)")
+
     kin = manifest.get("transformation")
     if kin:
         print(f"\nTransformation ({manifest['state']} state)")

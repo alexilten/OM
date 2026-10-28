@@ -95,8 +95,12 @@ Export: `ExportManifest`.
 | **03** LED systems | Panelization strategies for families 01–05, deviation/gap visualisation, counts, resolution, weight, power, alternatives when curvature fails | Cabinets keep true size; ideal vs built difference shown and quantified | **Done** (see §8c) |
 | **04** Transformation | Kinetic assemblies (retractable banks, lifts, translating rows, stage lifts), state machine, bottom timeline, playback, collision/clearance checks, section animation | Explicit paths; forward/reverse; audience cleared before motion; conflicts flagged; machinery marked conceptual | **Done** (see §8d) |
 | **05** Presets & venue fit | OM 150/300/400/Standing/360 presets × performance presets, project store, duplication, building envelope with columns, fit analysis | Presets use the same engine; save/reopen reproduces geometry | **Done** (see §8e) |
-| **06** CAD deliverables | Exact geometry everywhere practical, named blocks, multiple state exports, schedules (CSV), DXF, GLB, PDF sheets | Export validator extended to every state | Planned |
-| **07** Optimisation | Reverse configuration ("250 premium seats", "fit 30 m wide"), immersion-driven layout search, comparison dashboards | Deterministic, explainable proposals | Planned |
+| **06** Catalog & immersion systems | Standard / Premium / Flagship fit-out (seats, riser decks, guardrails, seat accessories); lighting rigs, immersive audio (HOLOPLOT, d&b Soundscape, L-ISA, generic), haptics, atmospherics and tracking as layers with on/off, tier, density and product | Units placed, counted, costed and exported on their layers; every fixture and speaker has a stable id | In progress |
+| **07** LED support structure | Generative, productised structure behind the media surface (ribs, ring girders, brackets, splices, shippable segments, schedules, install logistics, service walkway) that carries the audio arrays, lighting truss and hoists | Pick-up schedule includes Round 06 loads; segments respect shipping limits; scales with the media surface | Planned |
+| **08** Live Show Preview I | EXPERIENCE tab: video upload + shader ambient presets mapped on the sphere, from-seat view, audio upload + synthesised soundscapes, BPM detection / tap tempo, virtual-speaker binaural preview, transport | A/V in sync within one frame over 10 min; BPM within 2 %; 60 fps budget — see `docs/plans/SHOW_PREVIEW_PLAN.md` | Planned |
+| **09** Live Show Preview II | Content-driven lighting (zone + palette), beams in haze, modulation matrix (beat / bands / colour → video, lights, haze, haptics), show presets, cue list, clip recording, flash-safety limiter | Washes track adjacent screen colour within 100 ms; one-click presets; flash limiter verified | Planned |
+| **10** CAD deliverables | Exact geometry everywhere practical, named blocks, multiple state exports, schedules (CSV), DXF, GLB, PDF sheets | Export validator extended to every state | Planned |
+| **11** Optimisation | Reverse configuration ("250 premium seats", "fit 30 m wide"), immersion-driven layout search, comparison dashboards | Deterministic, explainable proposals | Planned |
 
 ## 6. Known risks
 
@@ -139,6 +143,11 @@ Export: `ExportManifest`.
 | 2026-10-28 | The building is the site: presets and alternatives never change it unless the designer does | Lets OM 150/300/400 be checked against one building directly |
 | 2026-10-28 | Venue fit claims the design envelope (sphere + service zone) plus a circulation walkway; a column inside the sphere or the service zone is a clash, one in the walkway is advice | Simple, explainable rules that match "screen support envelope" and "audience circulation" in the brief |
 | 2026-10-28 | Alternatives live in the browser (localStorage) and regenerate on compare; nothing derived is stored | A saved project always reproduces its geometry |
+| 2026-10-28 | Fit-out and immersion systems are catalog choices with three tiers (Standard = industry standard, Premium = high-end cinema/theatre, Flagship = bespoke immersive), plus per-system on/off and a density multiplier 0.5–2. A package button sets the seat, fit-out and every system tier at once | "Swap industry standards and premiums" and "scale up in desirability" without a new set of parameters per product |
+| 2026-10-28 | Audio arrays sit behind the screen (front face R + 0.35 m) in rings inside the media span, one product chosen per venue (HOLOPLOT X1 matrix, d&b Soundscape 44S, L-ISA X8, generic); matrix products stack modules per position | Keeps the room clear and ties every flown load to the Round 07 structure; requires an acoustically transparent screen (flagged) |
+| 2026-10-28 | Lighting hangs on a stage truss, a base wash ring and (flagship) a halo in the oculus; hoists carry their share of truss + fixture weight as `pick_load_kg`. Overhead rigs are scored as screen hidden from the reference eye | Gives Round 07 the pick-up points and loads; makes the cost of overhead rigs to the screen visible |
+| 2026-10-28 | Costs are placeholders for comparing options, labelled so everywhere | No supplier pricing yet |
+| 2026-10-28 | The live show preview (Rounds 08–09) runs client-side on one audio clock; ambient video and soundscape presets are generated (shaders, Web Audio synthesis), uploads never leave the browser | Licence-clean, sharp at LED resolution, beat-addressable; the site and repo are public. Plan: `docs/plans/SHOW_PREVIEW_PLAN.md` |
 | 2026-10-28 | Public app on GitHub Pages, rebuilt on every push to main | Alex asked for public links (https://alexilten.github.io/OM/) |
 | 2026-10-28 | Standing capacity at 0.5 m² per person on the clear floor of the standing state (0.25 m grid inside the screen clearance) | Conceptual density, to be replaced by the OM team's figure (see §9 question 12) |
 
@@ -212,6 +221,22 @@ Delivered:
 
 Known limits: entrances, exits, support spaces and mechanical access are not modelled yet; the building is a rectangle aligned with the venue (no rotation, no imported CAD); in-the-round closes the screen, so use the section cut to look inside; alternatives are stored per browser (Save/Open moves single alternatives between machines).
 
+## 8f. Round 06 status
+
+Delivered:
+
+- `src/library/catalog.ts` — tiered catalog: riser decks (steel/ply, acoustically damped, bespoke with services), guardrails (steel, glass, glass with LED cap rail), seat accessories (cup holder, side table + USB-C, service console); seat products mapped to tiers. Immersion systems with per-tier units: lighting (moving-head spots, LED washes, show lasers, box truss, chain hoists), immersive audio, haptics (inertial transducer; Powersoft Mover; D-BOX G5 actuators, figures from the Round 06 FX research), atmospherics (hazer, low fog, scent), tracking (cameras, depth sensors). Audio products: HOLOPLOT X1 MD96 (100 kg, 650 W continuous from the data sheet), d&b 44S (3.6 kg), L-Acoustics X8 (12 kg), generic grid. Costs are placeholders.
+- `src/engine/systems.ts` — places every unit as a block instance on its layer: arrays in rings behind the screen (plus a flagship zenith array and floor subwoofers), a stage truss shrunk to stay inside the sphere, a base wash ring, a flagship halo in the oculus, hazers on a floor ring, cameras on the front arc aimed at the audience. Roll-ups per system and in total: units, power, weight, placeholder cost; rigging pick-up points and suspended load; share of the screen hidden by overhead rigs. Fit-out: riser deck area from the generated tiers, guardrails along the rear edge of each block's top row where the drop exceeds 0.6 m, accessories per seat.
+- Defaults (OM 300): premium fit-out, premium lighting, premium HOLOPLOT audio, premium haptics, standard atmospherics, tracking off. With every system on, the three packages come to: Standard 51 placed units + 330 seat transducers, $1.2 M (Minispace, 330 seats); Premium 146 + 304, $5.7 M (Smart, 304 seats); Flagship 313 + 326 actuators, $14.0 M (Opus at 1.3 m pitch, 163 seats). Costs are placeholders. Round 05 files open with every system off.
+- Validation: unknown items, tiers, density outside 0.5–2, unknown audio product; warnings when arrays do not fit the service zone, no ring fits the media, overhead rigs hide more than 5 % of the screen, or flagship motion seats meet telescopic wagons.
+- UI: Fit-out & products (package Standard / Premium / Flagship, per-category picks with price badges, deck / guardrail / cost totals) and Immersion systems (per-system on/off, tier, density, audio product, totals) sections; system units coloured by system in the viewport; Systems group in All metrics.
+- Rhino export: units on `05_TECHNICAL/{Lighting, Audio, Rigging, AV_Equipment}`, guardrails on `02_AUDIENCE/Guardrails`, `SYS_*` block definitions, systems summary in the manifest. `npm run export:sample -- --packages` writes OM 300 with every system on at each tier.
+- `scripts/validate_3dm.py` — new checks: placed units per system match the manifest, speakers between the screen and the service-zone limit, fixtures/hazers/sensors inside the sphere, guardrail length, every hoist carries a load. All 18 files (presets + packages, seated and standing) pass.
+- Roadmap: live show preview planned as Rounds 08–09 (`docs/plans/SHOW_PREVIEW_PLAN.md`); CAD deliverables move to 10, optimisation to 11.
+- Tests: 69 (11 new).
+
+Known limits: placement rules are not a lighting or acoustic design (coverage comes from the manufacturers' tools); the FX mounting zones, laser exclusion volumes, heavy-gas pooling and rules F1–F12 from the FX research are scheduled with Round 07; units do not yet hang from structure.
+
 ## 9. Open questions for the OM team
 
 1. **Pitch deck**: please share it; Round 02 seating/stage presets should match its diagrams.
@@ -228,3 +253,6 @@ Known limits: entrances, exits, support spaces and mechanical access are not mod
 12. **Standing density and changeover**: what standing density should OM plan for (currently 0.5 m² per person), and what changeover time is acceptable? The default sequence takes 3:16 at 80 mm/s, of which 60 s is the clearance hold.
 13. **Transformation suppliers**: are Gala Systems or Figueras (or others) already in conversation? Their wagon dimensions and speeds would replace the conceptual defaults.
 14. **Candidate buildings**: are there real sites to test? Width, depth, clear height, column grid and floor level for two or three would make the fit check concrete (and show which size each can take).
+15. **Product shortlist and pricing**: which lighting, audio and haptics suppliers are in conversation (HOLOPLOT, d&b, L-Acoustics, Powersoft, D-BOX)? Real prices would replace every placeholder cost.
+16. **Screen acoustics**: speakers behind the LED need an acoustically transparent screen. Is a perforated or open-frame LED acceptable, or should arrays go above and below the screen instead?
+17. **Flagship seats**: motion seats (D-BOX class) cannot fold into telescopic wagons. Should flagship venues favour motion seating or the standing transformation?

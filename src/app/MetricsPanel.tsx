@@ -23,6 +23,8 @@ function formatMetric(m: Metric, units: 'm' | 'ft'): string {
       return `${(m.value / 1000).toFixed(1)} kW`;
     case 'px':
       return `${(m.value / 1e6).toFixed(1)} MP`;
+    case 'USD':
+      return m.value >= 1e6 ? `$${(m.value / 1e6).toFixed(2)} M` : `$${Math.round(m.value / 1000).toLocaleString()} k`;
     case 'count':
       return m.value.toLocaleString();
     default:
@@ -30,7 +32,7 @@ function formatMetric(m: Metric, units: 'm' | 'ft'): string {
   }
 }
 
-const GROUPS: Metric['group'][] = ['Audience', 'Media', 'Geometry', 'LED', 'Transformation', 'Architecture'];
+const GROUPS: Metric['group'][] = ['Audience', 'Media', 'Geometry', 'LED', 'Transformation', 'Architecture', 'Systems'];
 const HEADLINE = ['aud.seats', 'media.hcoverage', 'media.area', 'sphere.diameter'];
 
 export function MetricsPanel() {

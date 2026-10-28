@@ -9,6 +9,7 @@ import { AnalysisSection, CapacityTarget } from './AnalysisPanel';
 import { LedSection } from './LedPanel';
 import { TransformSection } from './TransformPanel';
 import { BuildingSection, PresetSection } from './VenuePanel';
+import { FitoutSection, SystemsSection } from './SystemsPanel';
 
 const F = (path: string, label: string, kind: FieldSpec['kind'], min: number, max: number, step: number, tip: string): FieldSpec => ({ path, label, kind, min, max, step, tip });
 
@@ -194,6 +195,12 @@ export function ParameterPanel() {
           <ParamField key={f.path} spec={f} />
         ))}
         <CapacityTarget />
+      </Section>
+      <Section title="Fit-out & products" defaultOpen={false}>
+        <FitoutSection />
+      </Section>
+      <Section title="Immersion systems" defaultOpen={false}>
+        <SystemsSection />
       </Section>
       <Section title="Immersion analysis">
         <AnalysisSection />
