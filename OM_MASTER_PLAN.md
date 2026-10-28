@@ -83,7 +83,7 @@ Library: `SeatingProduct`, `LedProduct` with `SpecValue {value, status: manufact
 Generated: `VenueModel`, `VenueObject`, `BlockDefinition`, `SeatRecord` (= `AudienceEyePoint`), `Metric` (quality: exact|derived|estimate|conceptual), `Issue`.
 Export: `ExportManifest`.
 
-`ImmersionAnalysis` (R02) lives in `src/engine/immersion.ts`; its settings (weights, ramps) are part of `VenueConfiguration.analysis` so saved files reproduce scores. The LED system (R03) is `VenueConfiguration.led` plus `src/engine/led.ts`; Round 01–02 files carrying `ledPreview` are migrated on open. Still to add: `KineticAssembly` + `TransformationState` (R04), `BuildingEnvelope` (R05).
+`ImmersionAnalysis` (R02) lives in `src/engine/immersion.ts`; its settings (weights, ramps) are part of `VenueConfiguration.analysis` so saved files reproduce scores. The LED system (R03) is `VenueConfiguration.led` plus `src/engine/led.ts`; Round 01–02 files carrying `ledPreview` are migrated on open. The transformation (R04) is `VenueConfiguration.transformation` plus `src/engine/kinetics.ts` (`KineticAssembly`, `TransitionStep`, `TransformationModel`, `poseAt`); seats carry their aisle block and their wagon as `parentAssembly`. Still to add: `BuildingEnvelope` (R05).
 
 ## 5. Development rounds and acceptance criteria
 
@@ -93,7 +93,7 @@ Export: `ExportManifest`.
 | **01** Spherical PoC | Origin, reference sphere, exact media patch with az/el limits, floor elevation, simple stage, basic tiered seating, orbit camera, section cut, `.3dm` export | Radius change regenerates everything; surface stays spherical (tested to 1e-10 m); floor change never moves the origin; seat count = generated objects; `.3dm` opens with metres, layers, blocks, metadata, correct coordinates (independent Python check) | **Done** (see §8) |
 | **02** Seating & experience | Seat product system, generative tiers with accessibility positions, capacity target solver, sightlines (head-clearance proxies, C-value later), immersion scoring + heatmap, view-from-seat FOV | Heatmap responds logically to geometry; every score traceable to its inputs; capacity target never yields impossible layouts | **Done** except accessibility positions (see §9) |
 | **03** LED systems | Panelization strategies for families 01–05, deviation/gap visualisation, counts, resolution, weight, power, alternatives when curvature fails | Cabinets keep true size; ideal vs built difference shown and quantified | **Done** (see §8c) |
-| **04** Transformation | Kinetic assemblies (retractable banks, lifts, translating rows, stage lifts), state machine, bottom timeline, playback, collision/clearance checks, section animation | Explicit paths; forward/reverse; audience cleared before motion; conflicts flagged; machinery marked conceptual | Planned |
+| **04** Transformation | Kinetic assemblies (retractable banks, lifts, translating rows, stage lifts), state machine, bottom timeline, playback, collision/clearance checks, section animation | Explicit paths; forward/reverse; audience cleared before motion; conflicts flagged; machinery marked conceptual | **Done** (see §8d) |
 | **05** Presets & venue fit | OM 150/300/400/Standing/360 presets × performance presets, project store, duplication, building envelope with columns, fit analysis | Presets use the same engine; save/reopen reproduces geometry | Planned |
 | **06** CAD deliverables | Exact geometry everywhere practical, named blocks, multiple state exports, schedules (CSV), DXF, GLB, PDF sheets | Export validator extended to every state | Planned |
 | **07** Optimisation | Reverse configuration ("250 premium seats", "fit 30 m wide"), immersion-driven layout search, comparison dashboards | Deterministic, explainable proposals | Planned |
@@ -132,6 +132,10 @@ Export: `ExportManifest`.
 | 2026-10-28 | Families 04–05 are spherical tiles cut from the sphere, one tile type per row, never wider than the nominal panel | Matches how purpose-built domes are made; the cost shows up as tile-type count instead of deviation |
 | 2026-10-28 | Curvature check uses the hinge angle between ring neighbours (≈ w/R, rising towards the poles), solved exactly for the minimum radius | The old 2·atan(w/2ρ) estimate overstated the angle at high latitudes |
 | 2026-10-28 | Units are never stretched; uncovered strips at the top edge and row ends are reported | "Cabinets keep true size" |
+| 2026-10-28 | Seated → standing uses telescopic wagons: one per row and aisle block, each sliding straight back along its block's centre line until it nests one row pitch (less a nest offset) under the row behind; the back row stays put. The stage lowers by its own height | The most common retractable-seating type (Gala/Figueras/Hussey class). Straight paths are explicit and easy to engineer later |
+| 2026-10-28 | Sequence: interlock hold (house confirmed empty) → seats fold → wagons and stage lift move together. Standing → seated is the same sequence played backwards | "Audience cleared before motion" is structural: no assembly starts before the hold ends |
+| 2026-10-28 | Collisions are geometric only: plan footprints sampled every 1 s against every other assembly whose height band overlaps; touching is allowed, overlap is a conflict. Wagons stop short to keep 200 mm from the screen | Fast enough to run on every edit (≈0.1–0.2 s); labelled conceptual (R5) |
+| 2026-10-28 | Standing capacity at 0.5 m² per person on the clear floor of the standing state (0.25 m grid inside the screen clearance) | Conceptual density, to be replaced by the OM team's figure (see §9 question 12) |
 
 ## 8. Round 01 status
 
@@ -174,6 +178,20 @@ Delivered:
 
 Known limits: deviation is per unit (corner stand-off), so rings show one colour in deviation mode; joints mode shows where it matters. Tiles at the zenith become triangular gores. Substructure, mounting and service access are not modelled. Tile exports are large (≈ 17 MB for 2,856 Breps).
 
+## 8d. Round 04 status
+
+Delivered:
+
+- `src/engine/kinetics.ts` — telescopic seating wagons (deck, back riser, seats and eye points per row × aisle block), a stage lift, the seated → standing sequence (interlock hold, seat fold, wagons and lift), `poseAt(t)` for any moment in either direction, straight motion paths on `04_TRANSFORMATION/Movement_Envelopes`, the stage pit on `Storage_Volumes`, collision and screen-clearance checks with timed conflicts that explain the cause, and standing area/capacity measured on the standing state.
+- Seating: with telescopic seating each row is split into wagon decks per aisle block with a back riser, instead of solid tiers from the floor.
+- OM 300 default: 33 moving assemblies (32 wagons + stage lift; the back row stays), 3:16 seated → standing (60 s hold, 20 s fold, 117 s wagons in parallel with an 18 s stage lift), no conflicts, 333 m² clear floor → 666 standing. With a 250 mm riser the folded seats (200 mm + 80 mm deck) no longer fit under the row behind: 31 collisions, each naming the wagons, the time window and the shortfall.
+- UI: TRANSFORM workspace with a bottom timeline (step lanes, conflict markers, scrubber, play forward and back, ×1–×30, Seated/Standing jumps, live state "clearing the house / in transit / standing"), the viewport shows the pose at any time (wagons slide, seats fold, stage lowers; the section cut works on the moving geometry), and a Transformation panel (seating and stage mode, nest offset, deck, folded seat height, speeds, hold and fold times, summary, clickable conflicts).
+- Rhino export: seated or standing state (EXPORT RHINO follows the timeline; `export:sample` writes both). Moved objects carry `om.pose_offset` and `om.operating_state`; the manifest lists every assembly with its travel and timing, the conflict count and standing capacity.
+- `scripts/validate_3dm.py` — new checks: one straight path per moving assembly equal to its travel, paths marked conceptual, nothing moves before the clearance hold, the right number of objects moved, each by exactly its path, moved seats folded, lowered stage flush with the floor, no seated sightlines in the standing file.
+- Tests: 45 (9 new: explicit paths, start/end poses and monotonic playback, audience cleared first, no conflicts and screen gap, riser-shortfall collisions, stage lift and standing gain, conceptual flag and off switch, legacy files, standing export).
+
+Known limits: folding is drawn by scaling the seat block (the export keeps the seat block and marks it folded); wagons move straight, so curved or pivoting banks are not modelled yet; the side blocks stop short of full nesting where the screen comes first; drives, guides, pits for wagons and egress during transformation are not modelled.
+
 ## 9. Open questions for the OM team
 
 1. **Pitch deck**: please share it; Round 02 seating/stage presets should match its diagrams.
@@ -187,3 +205,5 @@ Known limits: deviation is per unit (corner stand-off), so rings show one colour
 9. **Accessibility**: which code applies (e.g. ADA, UK Approved Document M, EN 17210) and how many wheelchair/companion positions should OM 300 provide, and where?
 10. **Immersion weights**: do the default weights match the OM team's priorities? The fastest way to calibrate is to rate a handful of seats in a mock-up and fit the ramps to those ratings.
 11. **LED joints**: what wedge joint between faceted cabinets is acceptable at OM viewing distances? It sets whether families 01–02 are viable or 04–05 are required (currently up to 52 mm near the top ring at R = 13 m).
+12. **Standing density and changeover**: what standing density should OM plan for (currently 0.5 m² per person), and what changeover time is acceptable? The default sequence takes 3:16 at 80 mm/s, of which 60 s is the clearance hold.
+13. **Transformation suppliers**: are Gala Systems or Figueras (or others) already in conversation? Their wagon dimensions and speeds would replace the conceptual defaults.

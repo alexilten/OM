@@ -12,6 +12,8 @@ export type ViewName = 'iso' | 'top' | 'front' | 'side' | 'audience' | 'reset';
 export type MediaDisplay = 'calibration' | 'neutral';
 export type Workspace = 'DESIGN' | 'EXPERIENCE' | 'TRANSFORM' | 'ANALYZE' | 'EXPORT';
 export type LedColor = 'product' | 'deviation' | 'joints';
+/** Playback direction of the transformation timeline: 1 seated → standing, -1 back, 0 paused. */
+export type PlayDirection = -1 | 0 | 1;
 
 /** Layers hidden on first load (still exported). */
 const HIDDEN_BY_DEFAULT = new Set(['01_MEDIA/LED_Cabinets', '01_MEDIA/LED_Modules', '07_ANALYSIS/Eye_Points']);
@@ -43,6 +45,11 @@ interface StudioState {
   ledColor: LedColor;
   /** Every library LED product on the current screen; recomputed with the analysis. */
   ledComparison: LedSummary[] | null;
+  /** Time on the transformation timeline (s): 0 = seated, duration = standing. */
+  transformT: number;
+  playing: PlayDirection;
+  /** Playback speed relative to real time. */
+  playRate: number;
 
   setParam: (path: string, value: unknown) => void;
   /** Applies several edits as one regeneration (e.g. mirrored azimuths). */
@@ -62,6 +69,9 @@ interface StudioState {
   setLedColor: (c: LedColor) => void;
   /** Shows or hides the LED cabinet and module layers together. */
   setLedVisible: (on: boolean) => void;
+  setTransformT: (t: number) => void;
+  play: (dir: PlayDirection) => void;
+  setPlayRate: (rate: number) => void;
 }
 
 export function getPath(obj: unknown, path: string): unknown {
@@ -82,7 +92,7 @@ const initial = tryGenerateVenue(OM_300_FLAGSHIP);
 export const useStudio = create<StudioState>((set, get) => {
   const apply = (config: VenueConfiguration) => {
     const r = tryGenerateVenue(config);
-    if (r.model) set({ config, model: r.model, issues: r.issues, invalid: false });
+    if (r.model) set({ config, model: r.model, issues: r.issues, invalid: false, transformT: Math.min(get().transformT, r.model.transformation?.duration ?? 0) });
     else set({ config, issues: r.issues, invalid: true });
   };
   return {
@@ -103,6 +113,9 @@ export const useStudio = create<StudioState>((set, get) => {
     heatmap: false,
     ledColor: 'product',
     ledComparison: null,
+    transformT: 0,
+    playing: 0,
+    playRate: 10,
 
     setParam: (path, value) => apply(setPath(get().config, path, value)),
     setParams: (entries) => apply(entries.reduce((c, [p, v]) => setPath(c, p, v), get().config)),
@@ -123,7 +136,8 @@ export const useStudio = create<StudioState>((set, get) => {
     },
     select: (selectedId) => set({ selectedId }),
     setMediaDisplay: (mediaDisplay) => set({ mediaDisplay }),
-    setWorkspace: (workspace) => set({ workspace, heatmap: workspace === 'ANALYZE' }),
+    // Only TRANSFORM shows a moved pose; other workspaces always show the seated state.
+    setWorkspace: (workspace) => set({ workspace, heatmap: workspace === 'ANALYZE', ...(workspace === 'TRANSFORM' ? {} : { transformT: 0, playing: 0 as const }) }),
     setFov: (fov) => set({ fov }),
     requestView: (name) => set({ view: { name, nonce: get().view.nonce + 1 }, seatView: null }),
     viewFromSeat: (seatId) => set({ seatView: seatId ? { seatId } : null }),
@@ -140,6 +154,19 @@ export const useStudio = create<StudioState>((set, get) => {
       v['01_MEDIA/Ideal_Spherical_Surface'] = !on;
       set({ layerVisible: v });
     },
+    setTransformT: (t) => {
+      const d = get().model.transformation?.duration ?? 0;
+      set({ transformT: Math.max(0, Math.min(d, t)) });
+    },
+    play: (playing) => {
+      const { transformT, model } = get();
+      const d = model.transformation?.duration ?? 0;
+      // Playing from an end that has nowhere to go restarts from the other end.
+      if (playing === 1 && transformT >= d) set({ transformT: 0 });
+      if (playing === -1 && transformT <= 0) set({ transformT: d });
+      set({ playing });
+    },
+    setPlayRate: (playRate) => set({ playRate }),
   };
 });
 

@@ -6,6 +6,7 @@ import { ParameterPanel } from './ParameterPanel';
 import { SelectionPanel } from './SelectionPanel';
 import { useStudio, type ViewName } from './store';
 import { TopBar } from './TopBar';
+import { Timeline } from './TransformPanel';
 import { Viewport } from './Viewport';
 
 const VIEWS: { name: ViewName; label: string; title: string }[] = [
@@ -55,17 +56,19 @@ function ViewToolbar() {
 }
 
 export function App() {
+  const transform = useStudio((s) => s.workspace === 'TRANSFORM');
   return (
     <div className="app">
       <TopBar />
       <main className="workspace">
         <LayerPanel />
-        <div className="viewport">
+        <div className={`viewport ${transform ? 'transform-mode' : ''}`}>
           <Viewport />
           <ViewToolbar />
           <MetricsPanel />
           <SelectionPanel />
           <HeatLegend />
+          {transform && <Timeline />}
           <div className="coords-legend">
             <span className="x">X</span> right · <span className="y">Y</span> forward · <span className="z">Z</span> up · origin = sphere centre
           </div>

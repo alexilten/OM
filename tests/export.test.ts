@@ -106,4 +106,26 @@ describe('Rhino export', () => {
     }
     expect(tiles).toBe(manifest.led!.count);
   });
+
+  it('exports the standing state with every moved object one path length away and the stage lowered', () => {
+    const model = generateVenue(OM_300_FLAGSHIP);
+    const tr = model.transformation!;
+    const { bytes, manifest } = exportRhino(rh, model, { state: 'standing' });
+    expect(manifest.state).toBe('standing');
+    expect(manifest.transformation!.assemblies).toHaveLength(tr.assemblies.length);
+    const doc = rh.File3dm.fromByteArray(bytes);
+    const travel = new Map(tr.assemblies.map((a) => [a.id, a.travel]));
+    let moved = 0;
+    for (let i = 0; i < doc.objects().count; i++) {
+      const a = doc.objects().get(i).attributes();
+      const off = a.getUserString('om.pose_offset');
+      if (!off) continue;
+      moved++;
+      const t = travel.get(tr.memberOf.get(a.getUserString('om.object_id'))!)!;
+      off.split(',').forEach((v, k) => expect(Number(v)).toBeCloseTo(t[k], 6));
+      expect(a.getUserString('om.operating_state')).toBe('standing');
+    }
+    expect(moved).toBe(tr.assemblies.filter((a) => a.travel.some((v) => v !== 0)).reduce((n, a) => n + a.memberIds.length, 0));
+    expect(manifest.checkpoints.find((c) => c.id === 'stage.main')!.point[2]).toBeCloseTo(OM_300_FLAGSHIP.floor.mainFloorElevation - OM_300_FLAGSHIP.stage.height, 9);
+  });
 });

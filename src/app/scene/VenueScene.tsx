@@ -6,6 +6,7 @@ import { spherePoint, toDeg } from '../../engine/coordinates';
 import { mediaBounds } from '../../engine/media';
 import { sectionPlane, sphereSection } from '../../engine/section';
 import { GRADES } from '../../engine/immersion';
+import { poseAt, type Pose, type TransformationModel } from '../../engine/kinetics';
 import type { Geometry, VenueObject, Vec3 } from '../../engine/types';
 import { ledUnitColor } from '../ledColors';
 import { isLayerVisible, useStudio } from '../store';
@@ -64,18 +65,31 @@ function MediaSurface({ o }: { o: VenueObject }) {
   );
 }
 
-function Solid({ o, color, geo }: { o: VenueObject; color: string; geo: THREE.BufferGeometry }) {
+/** Where the transformation has moved an object, or undefined when it has not moved. */
+type OffsetOf = (id: string) => Vec3 | undefined;
+
+function useOffsets(tr: TransformationModel | undefined, pose: Pose | null): OffsetOf {
+  return useMemo(() => (id: string) => {
+    if (!tr || !pose) return undefined;
+    const a = tr.memberOf.get(id);
+    const d = a ? pose.offsets.get(a) : undefined;
+    return d && (d[0] || d[1] || d[2]) ? d : undefined;
+  }, [tr, pose]);
+}
+
+function Solid({ o, color, geo, offset }: { o: VenueObject; color: string; geo: THREE.BufferGeometry; offset?: Vec3 }) {
   const selected = useStudio((s) => s.selectedId === o.id);
   const onClick = useSelect();
   useEffect(() => () => geo.dispose(), [geo]);
   return (
-    <mesh geometry={geo} castShadow receiveShadow onClick={onClick(o.id)}>
+    <mesh geometry={geo} position={offset} castShadow receiveShadow onClick={onClick(o.id)}>
       <meshStandardMaterial color={selected ? COLORS.seatSelected : color} roughness={0.85} metalness={0.02} />
     </mesh>
   );
 }
 
-function Instances({ objects, geometry, color }: { objects: VenueObject[]; geometry: THREE.BufferGeometry; color: string }) {
+/** `foldScale`: local Z scale of each instance (seats folding flat for nesting); 1 = unfolded. */
+function Instances({ objects, geometry, color, offsetOf, foldScale = 1 }: { objects: VenueObject[]; geometry: THREE.BufferGeometry; color: string; offsetOf: OffsetOf; foldScale?: number }) {
   const ref = useRef<THREE.InstancedMesh>(null);
   const selectedId = useStudio((s) => s.selectedId);
   const select = useStudio((s) => s.select);
@@ -89,8 +103,14 @@ function Instances({ objects, geometry, color }: { objects: VenueObject[]; geome
     const hi = new THREE.Color(COLORS.seatSelected);
     const gradeColor = new Map(GRADES.map((g) => [g.grade, new THREE.Color(g.color)]));
     const cache = colorCache();
+    const fold = new THREE.Matrix4().makeScale(1, 1, foldScale);
+    const move = new THREE.Matrix4();
     objects.forEach((o, i) => {
-      mesh.setMatrixAt(i, frameMatrix((o.geometry as Extract<Geometry, { kind: 'blockInstance' }>).frame));
+      const m = frameMatrix((o.geometry as Extract<Geometry, { kind: 'blockInstance' }>).frame);
+      if (foldScale !== 1) m.multiply(fold);
+      const d = offsetOf(o.id);
+      if (d) m.premultiply(move.makeTranslation(d[0], d[1], d[2]));
+      mesh.setMatrixAt(i, m);
       const a = heatmap ? analysis?.seats.get(o.id) : undefined;
       const led = o.category.startsWith('LED') ? ledUnitColor(o.metadata, ledColor) : undefined;
       mesh.setColorAt(i, o.id === selectedId ? hi : a ? gradeColor.get(a.grade)! : led ? cache(led) : base);
@@ -98,7 +118,7 @@ function Instances({ objects, geometry, color }: { objects: VenueObject[]; geome
     mesh.instanceMatrix.needsUpdate = true;
     if (mesh.instanceColor) mesh.instanceColor.needsUpdate = true;
     mesh.computeBoundingSphere();
-  }, [objects, selectedId, color, heatmap, analysis, ledColor]);
+  }, [objects, selectedId, color, heatmap, analysis, ledColor, offsetOf, foldScale]);
   return (
     <instancedMesh
       key={objects.length}
@@ -182,12 +202,17 @@ function LedTiles({ objects }: { objects: VenueObject[] }) {
   );
 }
 
-function EyePoints({ objects }: { objects: VenueObject[] }) {
+function EyePoints({ objects, offsetOf }: { objects: VenueObject[]; offsetOf: OffsetOf }) {
   const geo = useMemo(() => {
     const g = new THREE.BufferGeometry();
-    g.setAttribute('position', new THREE.Float32BufferAttribute(objects.flatMap((o) => (o.geometry as Extract<Geometry, { kind: 'point' }>).p), 3));
+    const at = (o: VenueObject) => {
+      const p = (o.geometry as Extract<Geometry, { kind: 'point' }>).p;
+      const d = offsetOf(o.id);
+      return d ? [p[0] + d[0], p[1] + d[1], p[2] + d[2]] : p;
+    };
+    g.setAttribute('position', new THREE.Float32BufferAttribute(objects.flatMap(at), 3));
     return g;
-  }, [objects]);
+  }, [objects, offsetOf]);
   useEffect(() => () => geo.dispose(), [geo]);
   return (
     <points geometry={geo}>
@@ -259,6 +284,10 @@ export function VenueScene() {
   const model = useStudio((s) => s.model);
   const vis = useStudio((s) => s.layerVisible);
   const shown = (o: VenueObject) => isLayerVisible(vis, o.layer);
+  const tr = model.transformation;
+  const t = useStudio((s) => s.transformT);
+  const pose = useMemo(() => (tr && t > 0 ? poseAt(tr, t) : null), [tr, t]);
+  const offsetOf = useOffsets(tr, pose);
 
   const byBlock = useMemo(() => {
     const m = new Map<string, VenueObject[]>();
@@ -267,6 +296,14 @@ export function VenueScene() {
   }, [model]);
   const blockGeos = useMemo(() => new Map(model.blocks.map((b) => [b.id, blockGeometry(b)])), [model.blocks]);
   useEffect(() => () => blockGeos.forEach((g) => g.dispose()), [blockGeos]);
+  // Folded seats shrink towards the folded height (a display effect; exports keep the block).
+  const foldScaleOf = (geo: THREE.BufferGeometry) => {
+    if (!pose?.fold || !tr) return 1;
+    geo.computeBoundingBox();
+    const h = geo.boundingBox!.max.z;
+    const folded = Math.min(1, model.config.transformation.foldedSeatHeight / h);
+    return 1 - pose.fold * (1 - folded);
+  };
 
   const solids = useMemo(
     () =>
@@ -292,12 +329,14 @@ export function VenueScene() {
       {shown(model.objects.find((o) => o.id === 'ref.sphere')!) && <ReferenceSphere R={model.config.sphere.radius} />}
       {shown(media) && <MediaSurface o={media} />}
       {solids.filter(({ o }) => shown(o)).map(({ o, geo, color }) => (
-        <Solid key={o.id} o={o} geo={geo} color={color} />
+        <Solid key={o.id} o={o} geo={geo} color={color} offset={offsetOf(o.id)} />
       ))}
       {[...byBlock].map(([blockId, objs]) => {
         const visible = objs.filter(shown);
         if (!visible.length) return null;
-        return <Instances key={blockId} objects={visible} geometry={blockGeos.get(blockId)!} color={blockId.includes('.led.') ? COLORS.led : COLORS.seat} />;
+        const led = blockId.includes('.led.');
+        const geo = blockGeos.get(blockId)!;
+        return <Instances key={blockId} objects={visible} geometry={geo} color={led ? COLORS.led : COLORS.seat} offsetOf={offsetOf} foldScale={led ? 1 : foldScaleOf(geo)} />;
       })}
       {tiles.length > 0 && shown(tiles[0]) && <LedTiles objects={tiles} />}
       {lines.filter(({ o }) => shown(o)).map(({ o, pts }) => (
@@ -309,7 +348,7 @@ export function VenueScene() {
           <meshBasicMaterial color="#111" />
         </mesh>
       )}
-      {eyes.length > 0 && isLayerVisible(vis, '07_ANALYSIS/Eye_Points') && <EyePoints objects={eyes} />}
+      {eyes.length > 0 && isLayerVisible(vis, '07_ANALYSIS/Eye_Points') && <EyePoints objects={eyes} offsetOf={offsetOf} />}
       <SectionOverlay />
       <SeatSightline />
     </group>

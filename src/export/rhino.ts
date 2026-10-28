@@ -15,6 +15,7 @@ import type rhino3dmFactory from 'rhino3dm';
 import { LAYERS, ROOT_LAYER, rhinoLayerPath } from '../engine/layers';
 import { spherePoint } from '../engine/coordinates';
 import { analysisObjects, seatAnalysisMetadata, type ImmersionAnalysis } from '../engine/immersion';
+import { posedObjects, poseAt } from '../engine/kinetics';
 import { spherePatchNurbs } from '../engine/nurbs';
 import type { Frame, Geometry, VenueModel, VenueObject } from '../engine/types';
 
@@ -24,8 +25,8 @@ type ObjectAttributes = InstanceType<Rhino['ObjectAttributes']>;
 
 export const EXPORT_SCHEMA = 'om-studio/export@1';
 
-/** Round 01 exports the current state only; seated/standing/transformation states arrive in Round 04. */
-export type ExportState = 'current';
+/** Which end of the transformation the geometry shows. Venues without a transformation are always seated. */
+export type ExportState = 'seated' | 'standing';
 
 export interface ExportManifest {
   schema: string;
@@ -48,6 +49,13 @@ export interface ExportManifest {
     unit: { w: number; h: number; d: number };
     maxDeviation: number;
     coverage: number;
+  };
+  transformation?: {
+    duration: number;
+    assemblies: { id: string; kind: string; members: number; travel: [number, number, number]; start: number; duration: number }[];
+    conflicts: number;
+    standingArea: number;
+    standingCapacity: number;
   };
   immersion?: { average: number; premiumCount: number; warningCount: number; gradeCounts: Record<string, number> };
   sphereRadius: number;
@@ -159,12 +167,15 @@ function attributesFor(rh: Rhino, o: VenueObject, layerIndex: number, configId: 
 }
 
 export interface ExportOptions {
+  /** Default 'seated'. 'standing' moves every assembly to the end of its path and folds the seats. */
   state?: ExportState;
   /** When given, seats carry their immersion score and grade, and sightlines/targets go on 07_ANALYSIS. */
   analysis?: ImmersionAnalysis;
 }
 
-export function buildRhinoDocument(rh: Rhino, model: VenueModel, { state = 'current', analysis }: ExportOptions = {}) {
+export function buildRhinoDocument(rh: Rhino, model: VenueModel, { state = 'seated', analysis }: ExportOptions = {}) {
+  const tr = model.transformation;
+  if (state === 'standing' && !tr) throw new Error('This venue has no transformation, so it has no standing state.');
   const doc = new rh.File3dm();
   const settings = doc.settings();
   settings.modelUnitSystem = rh.UnitSystem.Meters;
@@ -193,7 +204,10 @@ export function buildRhinoDocument(rh: Rhino, model: VenueModel, { state = 'curr
   }
 
   const configId = model.config.id;
-  const objects = analysis ? [...model.objects, ...analysisObjects(model, analysis)] : model.objects;
+  // Sightlines describe seated viewing, so the standing state carries no analysis.
+  const standing = state === 'standing' && tr ? posedObjects(model.objects, tr, poseAt(tr, tr.duration)) : null;
+  const objects = standing ?? (analysis ? [...model.objects, ...analysisObjects(model, analysis)] : model.objects);
+  if (standing) analysis = undefined;
   const countsByLayer: Record<string, number> = {};
   const countsByKind: Record<string, number> = {};
   const instancesPerBlock = new Map<string, number>();
@@ -220,6 +234,15 @@ export function buildRhinoDocument(rh: Rhino, model: VenueModel, { state = 'curr
     const li = layerIndex.get(o.layer);
     if (li === undefined) throw new Error(`Unknown layer ${o.layer}`);
     const attrs = attributesFor(rh, o, li, configId);
+    if (standing && tr) {
+      const a = tr.memberOf.get(o.id);
+      const d = a && tr.assemblies.find((x) => x.id === a)!.travel;
+      if (d && (d[0] || d[1] || d[2])) {
+        attrs.setUserString('om.operating_state', 'standing');
+        attrs.setUserString('om.pose_offset', d.map((v) => +v.toFixed(6)).join(','));
+        if (o.category === 'Seat') attrs.setUserString('om.folded', 'yes');
+      }
+    }
     const seatAnalysis = analysis?.seats.get(o.id);
     if (seatAnalysis) for (const [k, v] of Object.entries(seatAnalysisMetadata(seatAnalysis))) attrs.setUserString(`om.${k}`, String(v));
     if (o.geometry.kind === 'blockInstance') {
@@ -259,6 +282,13 @@ export function buildRhinoDocument(rh: Rhino, model: VenueModel, { state = 'curr
       unit: { w: model.led.product.cabinetWidth.value, h: model.led.product.cabinetHeight.value, d: model.led.product.cabinetDepth.value },
       maxDeviation: model.led.maxDeviation,
       coverage: model.led.coverage,
+    },
+    transformation: tr && {
+      duration: +tr.duration.toFixed(3),
+      assemblies: tr.assemblies.map((a) => ({ id: a.id, kind: a.kind, members: a.memberIds.length, travel: a.travel.map((v) => +v.toFixed(6)) as [number, number, number], start: +a.start.toFixed(3), duration: +a.duration.toFixed(3) })),
+      conflicts: tr.conflicts.length,
+      standingArea: +tr.standing.area.toFixed(3),
+      standingCapacity: tr.standing.capacity,
     },
     immersion: analysis && {
       average: +analysis.average.toFixed(4),

@@ -6,6 +6,7 @@
 import { getSeatingProduct } from '../library/seating';
 import { architectureMetrics, architectureObjects, stageObjects } from './architecture';
 import { LAYERS } from './layers';
+import { generateTransformation } from './kinetics';
 import { generateLed } from './led';
 import { mediaMetrics, mediaObjects, referenceObjects, sphereRadiusAt } from './media';
 import { generateSeating } from './seating';
@@ -34,7 +35,10 @@ export function generateVenue(config: VenueConfiguration): VenueModel {
   const led = generateLed(config);
   issues.push(...stage.issues, ...seating.issues, ...led.issues);
 
-  const objects = [...referenceObjects(config), ...mediaObjects(config), ...stage.objects, ...seating.objects, ...led.objects, ...architectureObjects(config)];
+  const base = [...referenceObjects(config), ...mediaObjects(config), ...stage.objects, ...seating.objects, ...led.objects, ...architectureObjects(config)];
+  const kin = generateTransformation(config, base, seating.seats);
+  issues.push(...kin.issues);
+  const objects = [...base, ...kin.objects];
 
   const known = new Set(LAYERS.map((l) => l.path));
   for (const o of objects) if (!known.has(o.layer)) throw new Error(`Object ${o.id} uses unknown layer ${o.layer}`);
@@ -61,8 +65,16 @@ export function generateVenue(config: VenueConfiguration): VenueModel {
     { key: 'aud.eyeMax', label: 'Highest eye point', value: eyeZ.length ? Math.max(...eyeZ) : 0, unit: 'm', quality: 'derived', group: 'Audience' },
     { key: 'aud.nearestOrigin', label: 'Nearest eye point to origin', value: nearest, unit: 'm', quality: 'derived', group: 'Audience' },
     { key: 'aud.minClear', label: 'Min seat-to-sphere clearance', value: minClear, unit: 'm', quality: 'derived', group: 'Audience' },
-    // Conceptual only: 0.5 m² per standing person on the floor disc inside the screen clearance.
-    { key: 'aud.standing', label: 'Standing capacity (concept, not occupancy)', value: Math.floor((Math.PI * Math.max(0, floorRadius - config.seating.screenClearance) ** 2 - config.stage.width * config.stage.depth) / 0.5), unit: 'count', quality: 'conceptual', group: 'Audience' },
+    // Conceptual only: 0.5 m² per standing person on clear floor inside the screen clearance. With a
+    // transformation it is measured on the standing state; without one, on the floor disc less the stage.
+    {
+      key: 'aud.standing',
+      label: 'Standing capacity (concept, not occupancy)',
+      value: kin.model ? kin.model.standing.capacity : Math.floor((Math.PI * Math.max(0, floorRadius - config.seating.screenClearance) ** 2 - config.stage.width * config.stage.depth) / 0.5),
+      unit: 'count',
+      quality: 'conceptual',
+      group: 'Audience',
+    },
   ];
 
   return {
@@ -71,7 +83,8 @@ export function generateVenue(config: VenueConfiguration): VenueModel {
     blocks: [...seating.blocks, ...led.blocks],
     led: led.summary,
     seats,
-    metrics: [...mediaMetrics(config), ...led.metrics, ...audience, ...architectureMetrics(config)],
+    metrics: [...mediaMetrics(config), ...led.metrics, ...audience, ...kin.metrics, ...architectureMetrics(config)],
+    transformation: kin.model,
     issues,
   };
 }
