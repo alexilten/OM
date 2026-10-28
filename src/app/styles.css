@@ -63,13 +63,14 @@ button:disabled { cursor: not-allowed; }
 .segmented button.active { background: #fff; color: var(--text); box-shadow: 0 1px 2px rgba(0, 0, 0, 0.08); }
 
 /* ── Workspace ─────────────────────────────────────────── */
-.workspace { flex: 1; display: grid; grid-template-columns: 236px 1fr 312px; min-height: 0; }
+.workspace { flex: 1; display: grid; grid-template-columns: 312px 1fr 236px; min-height: 0; }
 .viewport { position: relative; min-width: 0; }
 .viewport canvas { display: block; }
 
 .panel { background: var(--panel-solid); overflow-y: auto; min-height: 0; }
-.panel.left { border-right: 1px solid var(--line); padding: 12px 10px; }
-.panel.right { border-left: 1px solid var(--line); padding: 6px 0 40px; }
+/* Generative sliders on the left, layers and alternatives on the right (Stagework layout). */
+.panel.layers { border-left: 1px solid var(--line); padding: 12px 10px; }
+.panel.params { border-right: 1px solid var(--line); padding: 6px 0 40px; }
 .panel-heading { font-size: 10.5px; letter-spacing: 0.12em; text-transform: uppercase; color: var(--muted); padding: 2px 6px 10px; }
 
 /* Layers */
@@ -180,8 +181,8 @@ select { width: 100%; padding: 6px 8px; border: 1px solid var(--line-strong); bo
 .coords-legend .z { color: #2e6fd6; font-weight: 700; }
 
 @media (max-width: 1100px) {
-  .workspace { grid-template-columns: 0 1fr 290px; }
-  .panel.left { display: none; }
+  .workspace { grid-template-columns: 290px 1fr 0; }
+  .panel.layers { display: none; }
 }
 
 /* Round 02: immersion analysis */
@@ -323,3 +324,9 @@ select { width: 100%; padding: 6px 8px; border: 1px solid var(--line-strong); bo
 .system-card.off { background: #fafbfc; }
 .system-head { display: flex; align-items: center; justify-content: space-between; gap: 8px; }
 .system-total { color: var(--muted); font-size: 11px; font-variant-numeric: tabular-nums; white-space: nowrap; }
+
+/* Round 07: support structure */
+.pick-table { width: 100%; border-collapse: collapse; font-size: 11px; font-variant-numeric: tabular-nums; }
+.pick-table td { padding: 3px 0; border-bottom: 1px solid var(--line); }
+.pick-table td:not(:first-child) { text-align: right; padding-left: 8px; white-space: nowrap; }
+.pick-table tr.bad td { color: #b42318; }

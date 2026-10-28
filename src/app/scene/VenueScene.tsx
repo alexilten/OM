@@ -29,7 +29,9 @@ const COLORS = {
   circulation: '#e8a33d',
 };
 
-const SYSTEM_COLORS: Record<string, string> = { lighting: '#e8a33d', audio: '#2a7f62', atmospherics: '#8fa3b8', tracking: '#7b5ea7' };
+const SYSTEM_COLORS: Record<string, string> = { structure: '#4b5563', lighting: '#e8a33d', audio: '#2a7f62', atmospherics: '#8fa3b8', tracking: '#7b5ea7' };
+
+const STRUCTURE_COLORS: Record<string, string> = { Rib: '#4b5563', RingGirder: '#6b7280', BaseRing: '#6b7280', TopRing: '#374151', PickBeam: '#c47f1a', CrownBeam: '#c47f1a', Chain: '#c47f1a' };
 
 const COLUMN_COLORS: Record<string, string> = { clear: COLORS.column, circulation: COLORS.circulation, service: '#e4572e', inside: '#d73027' };
 
@@ -37,6 +39,7 @@ const lineColor = (o: VenueObject) => {
   if (o.id === 'ref.axis.x') return '#d64545';
   if (o.id === 'ref.axis.y') return '#3a9a4a';
   if (o.id === 'ref.axis.z') return '#2e6fd6';
+  if (STRUCTURE_COLORS[o.category]) return STRUCTURE_COLORS[o.category];
   if (o.layer.startsWith('01_MEDIA')) return COLORS.edge;
   if (o.category === 'Circulation') return COLORS.circulation;
   if (o.category === 'Truss') return '#c47f1a';
@@ -323,7 +326,7 @@ export function VenueScene() {
         .map((o) => ({
           o,
           geo: o.geometry.kind === 'box' ? boxGeometry(o.geometry.min, o.geometry.max) : annularSectorGeometry(o.geometry as Extract<Geometry, { kind: 'annularSector' }>),
-          color: o.category === 'Floor' ? COLORS.floor : o.category === 'Stage' ? COLORS.stage : o.category === 'Column' ? COLUMN_COLORS[String(o.metadata.fit_status)] : COLORS.tier,
+          color: o.category === 'Floor' ? COLORS.floor : o.category === 'Stage' ? COLORS.stage : o.category === 'Column' ? COLUMN_COLORS[String(o.metadata.fit_status)] : o.category === 'ServiceWalkway' ? '#9aa3ad' : o.category === 'SafetyVolume' ? '#d73027' : COLORS.tier,
         })),
     [model],
   );
@@ -341,19 +344,19 @@ export function VenueScene() {
       {shown(media) && <MediaSurface o={media} />}
       {solids.filter(({ o }) => shown(o)).map(({ o, geo, color }) => (
         // Clear columns are ghosted so they do not hide the venue; clashing ones stay solid.
-        <Solid key={o.id} o={o} geo={geo} color={color} offset={offsetOf(o.id)} opacity={o.category === 'Column' && o.metadata.fit_status === 'clear' ? 0.25 : 1} />
+        <Solid key={o.id} o={o} geo={geo} color={color} offset={offsetOf(o.id)} opacity={(o.category === 'Column' && o.metadata.fit_status === 'clear') || o.category === 'SafetyVolume' ? 0.25 : 1} />
       ))}
       {[...byBlock].map(([blockId, objs]) => {
         const visible = objs.filter(shown);
         if (!visible.length) return null;
         const led = blockId.includes('.led.');
-        const system = blockId.startsWith('block.sys.') ? blockId.split('.')[2] : undefined;
+        const system = blockId.startsWith('block.sys.') ? blockId.split('.')[2] : blockId.startsWith('block.struct.') ? 'structure' : undefined;
         const geo = blockGeos.get(blockId)!;
         return <Instances key={blockId} objects={visible} geometry={geo} color={system ? SYSTEM_COLORS[system] : led ? COLORS.led : COLORS.seat} offsetOf={offsetOf} foldScale={led || system ? 1 : foldScaleOf(geo)} />;
       })}
       {tiles.length > 0 && shown(tiles[0]) && <LedTiles objects={tiles} />}
       {lines.filter(({ o }) => shown(o)).map(({ o, pts }) => (
-        <Line key={o.id} points={pts} color={lineColor(o)} lineWidth={o.layer.includes('Envelope') ? 0.8 : 1.5} dashed={(o.layer.includes('Envelope') && o.category !== 'BuildingEnvelope') || o.category === 'Circulation' || o.id === 'ref.floorline'} dashSize={0.5} gapSize={0.3} />
+        <Line key={o.id} points={pts} color={lineColor(o)} lineWidth={o.layer.includes('Envelope') ? 0.8 : o.category === 'Rib' || o.category.endsWith('Ring') || o.category === 'RingGirder' ? 2.5 : 1.5} dashed={o.category === 'Chain' || (o.layer.includes('Envelope') && o.category !== 'BuildingEnvelope') || o.category === 'Circulation' || o.id === 'ref.floorline'} dashSize={0.5} gapSize={0.3} />
       ))}
       {shown(model.objects.find((o) => o.id === 'ref.origin')!) && (
         <mesh onClick={(e) => (e.stopPropagation(), useStudio.getState().select('ref.origin'))}>

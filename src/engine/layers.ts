@@ -15,7 +15,7 @@ const tree: [string, [number, number, number], string[]][] = [
   ['04_TRANSFORMATION', [150, 60, 170], ['Movable_Platforms', 'Seating_Mechanisms', 'Stage_Mechanisms', 'Movement_Envelopes', 'Storage_Volumes']],
   ['05_TECHNICAL', [40, 150, 120], ['Audio', 'Lighting', 'Rigging', 'AV_Equipment', 'Electrical', 'Technical_Access']],
   ['06_ARCHITECTURE', [160, 160, 150], ['Floor', 'Walls', 'Ceiling', 'Structure', 'Circulation', 'Building_Envelope']],
-  ['07_ANALYSIS', [220, 40, 60], ['Eye_Points', 'Sightline_Rays', 'Viewing_Targets', 'Screen_Clearances', 'Mechanical_Clearances']],
+  ['07_ANALYSIS', [220, 40, 60], ['Eye_Points', 'Sightline_Rays', 'Viewing_Targets', 'Screen_Clearances', 'Mechanical_Clearances', 'FX_Safety_Volumes']],
   ['08_PRESENTATION', [100, 100, 100], ['Audience_People', 'Cameras', 'Presentation_Objects']],
 ];
 

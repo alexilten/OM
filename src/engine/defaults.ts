@@ -62,6 +62,7 @@ export const OM_300_FLAGSHIP: VenueConfiguration = {
     atmospherics: { enabled: true, tier: 'standard', scale: 1 },
     tracking: { enabled: false, tier: 'standard', scale: 1 },
   },
+  structure: { enabled: true, system: 'steel-truss', ribSpacing: 2.4, ringSpacing: 3.0, mountGap: 0.1, maxSegment: 6.0, walkways: true },
   operatingState: 'seated',
   preset: { size: 'om-300', performance: 'cinematic' },
   led: { enabled: true, productId: 'roe-ruby-c-rbc2.6f', extent: 'full', bandElevationDeg: 10, bandRows: 3, placement: 'tangent', jointGap: 0 },
@@ -78,6 +79,7 @@ export function cloneConfig(c: VenueConfiguration): VenueConfiguration {
  * Files before Round 04 get the default transformation; files before Round 05 get the default
  * building with its fit check off, so they regenerate the same objects, and the seated state.
  * Files before Round 06 get the default fit-out (costed only, no new geometry) and every system off.
+ * Files before Round 07 get the default structure switched off.
  */
 export function normalizeConfig(raw: VenueConfiguration & { ledPreview?: { enabled: boolean; productId: string; bandElevationDeg: number; bandRows: number } }): VenueConfiguration {
   const { ledPreview, ...rest } = cloneConfig(raw) as typeof raw;
@@ -94,5 +96,6 @@ export function normalizeConfig(raw: VenueConfiguration & { ledPreview?: { enabl
     for (const s of Object.values(systems)) s.enabled = false;
     c.systems = systems;
   }
+  c.structure ??= { ...cloneConfig(OM_300_FLAGSHIP).structure, enabled: false };
   return c;
 }

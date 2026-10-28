@@ -164,7 +164,7 @@ def main(path):
     bad = [o.Attributes.Name for o in tiers if abs(bbox(o.Geometry)[1][2] - pose_dz(o) - float(o.Attributes.GetUserString("om.tier_top_z"))) > 1e-4 or abs(bbox(o.Geometry)[0][2] - pose_dz(o) - tier_bottom(o)) > 1e-4]
     rep.check(tiers and not bad, f"{len(tiers)} tier platforms/decks span their stated bottom → tier top", ", ".join(bad))
     half = R + config["envelope"]["serviceZone"]
-    site = {"BuildingEnvelope", "Column", "Circulation"}
+    site = {"BuildingEnvelope", "Column", "Circulation", "SafetyVolume"}  # analysis volumes may extend past the venue
     outside = [o.Attributes.Name for o in top if o.Attributes.GetUserString("om.category") not in site and any(abs(x) > half + 1e-6 or abs(y) > half + 1e-6 for x, y, _ in exact_points(o.Geometry))]
     rep.check(not outside, f"all objects inside the {2*half:.1f} m design envelope (plan, exact vertices)", ", ".join(outside[:5]))
 
@@ -314,6 +314,33 @@ def main(path):
         hoists = [o for o in units if o.Attributes.GetUserString("om.category") == "Hoist"]
         load = sum(float(o.Attributes.GetUserString("om.pick_load_kg") or 0) for o in hoists)
         rep.check(all(float(o.Attributes.GetUserString("om.pick_load_kg") or 0) > 0 for o in hoists), f"every hoist carries a pick-up load ({len(hoists)} hoists, {load/1000:.1f} t)")
+
+    stm = manifest.get("structure")
+    if stm:
+        print("\nSupport structure")
+        cat = lambda o: o.Attributes.GetUserString("om.category")
+        ribs = [o for o in top if cat(o) == "Rib"]
+        rings = [o for o in top if cat(o) in ("RingGirder", "BaseRing", "TopRing")]
+        rep.check(len(ribs) == stm["segments"].get("rib", 0) and len(rings) == stm["segments"].get("ring", 0),
+                  f"{len(ribs)} rib and {len(rings)} ring segments, as in the manifest")
+        wrong = [o.Attributes.Name for o in ribs for x, y, z in exact_points(o.Geometry) if abs(math.sqrt(x * x + y * y + z * z) - stm["ribRadius"]) > 1e-6]
+        rep.check(not wrong, f"every rib lies on the {stm['ribRadius']:.3f} m rib sphere (behind the screen)", ", ".join(wrong[:5]))
+        R = config["sphere"]["radius"]
+        rep.check(R < stm["ribRadius"] and stm["back"] <= R + config["envelope"]["serviceZone"] + 1e-9, "the structure sits between the screen and the service-zone limit",
+                  f"back of structure {stm['back'] - R:.2f} m behind the screen")
+        limits = {"container-20": 5.9, "container-40": 12.03, "trailer": 13.6}
+        bad = []
+        for o in ribs + rings:
+            pts = exact_points(o.Geometry)
+            chord = math.dist(pts[0], pts[1]) if len(pts) == 2 else 0
+            ship = o.Attributes.GetUserString("om.shipping")
+            if ship not in limits or chord > limits[ship] + 1e-6:
+                bad.append(f"{o.Attributes.Name} {chord:.2f} m ({ship})")
+        rep.check(not bad, "every rib and ring segment fits its shipping class (chord ≤ length)", ", ".join(bad[:5]))
+        chains = [o for o in top if cat(o) == "Chain"]
+        rep.check(len(chains) == stm["chains"], f"{stm['chains']} chains to pick beams, the crown grid or the roof", f"found {len(chains)}")
+        nodes = [o for o in top if cat(o) == "StructureNode"]
+        rep.check(len(nodes) == stm["ribs"] * stm["rings"], f"one node bracket per rib × ring ({stm['ribs']} × {stm['rings']})", f"found {len(nodes)}")
 
     kin = manifest.get("transformation")
     if kin:

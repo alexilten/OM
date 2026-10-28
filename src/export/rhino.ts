@@ -17,6 +17,7 @@ import { spherePoint } from '../engine/coordinates';
 import { analysisObjects, seatAnalysisMetadata, type ImmersionAnalysis } from '../engine/immersion';
 import { posedObjects, poseAt } from '../engine/kinetics';
 import { spherePatchNurbs } from '../engine/nurbs';
+import { structureLayout } from '../engine/structure';
 import type { Frame, Geometry, VenueModel, VenueObject } from '../engine/types';
 
 export type Rhino = Awaited<ReturnType<typeof rhino3dmFactory>>;
@@ -58,6 +59,22 @@ export interface ExportManifest {
     standingCapacity: number;
   };
   building?: { width: number; depth: number; clearHeight: number; fits: boolean; maxRadius: number; columns: number; clashes: number };
+  structure?: {
+    system: string;
+    ribs: number;
+    rings: number;
+    ribRadius: number;
+    back: number;
+    segments: Record<string, number>;
+    shipping: Record<string, number>;
+    splices: number;
+    steelWeightKg: number;
+    ledLoadKg: number;
+    hungLoadKg: number;
+    maxRibReactionKg: number;
+    picks: Record<string, number>;
+    chains: number;
+  };
   systems: {
     units: Record<string, number>;
     guardrailLength: number;
@@ -271,6 +288,8 @@ export function buildRhinoDocument(rh: Rhino, model: VenueModel, { state = 'seat
   }
 
   const media = model.objects.find((o) => o.id === 'media.ideal')!.geometry as Extract<Geometry, { kind: 'spherePatch' }>;
+  const st = model.structure;
+  const count = (xs: string[]) => xs.reduce<Record<string, number>>((t, x) => ((t[x] = (t[x] ?? 0) + 1), t), {});
   const manifest: ExportManifest = {
     schema: EXPORT_SCHEMA,
     configurationId: configId,
@@ -308,6 +327,22 @@ export function buildRhinoDocument(rh: Rhino, model: VenueModel, { state = 'seat
       maxRadius: +model.fit.maxRadius.toFixed(4),
       columns: model.fit.columns.length,
       clashes: model.fit.columns.filter((k) => k.status === 'inside' || k.status === 'service').length,
+    },
+    structure: st && {
+      system: model.config.structure.system,
+      ribs: st.ribs,
+      rings: st.rings,
+      ribRadius: +(structureLayout(model.config)!.ribR).toFixed(6),
+      back: +(structureLayout(model.config)!.back).toFixed(6),
+      segments: count(st.segments.map((x) => x.member)),
+      shipping: st.shipping,
+      splices: st.splices,
+      steelWeightKg: Math.round(st.steelWeight),
+      ledLoadKg: Math.round(st.ledLoad),
+      hungLoadKg: Math.round(st.hungLoad),
+      maxRibReactionKg: Math.round(Math.max(...st.ribReactions)),
+      picks: count(st.picks.map((x) => x.carrier)),
+      chains: st.picks.filter((x) => x.carrier !== 'ring' && x.carrier !== 'unsupported').length,
     },
     systems: {
       units: Object.fromEntries(model.systems.systems.map((x) => [x.id, x.count])),
