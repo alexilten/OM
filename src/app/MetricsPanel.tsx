@@ -33,6 +33,7 @@ const HEADLINE = ['aud.seats', 'media.hcoverage', 'media.area', 'sphere.diameter
 export function MetricsPanel() {
   const metrics = useStudio((s) => s.model.metrics);
   const units = useStudio((s) => s.units);
+  const analysis = useStudio((s) => s.analysis);
   const [open, setOpen] = useState(false);
   const byKey = new Map(metrics.map((m) => [m.key, m]));
   return (
@@ -47,6 +48,14 @@ export function MetricsPanel() {
             </div>
           );
         })}
+        {analysis && (
+          <div className="headline" title="Average immersion score (design heuristic) and seats at or above the premium threshold">
+            <strong>
+              {analysis.average.toFixed(2)} · {analysis.premiumCount}
+            </strong>
+            <span>Immersion avg · premium</span>
+          </div>
+        )}
         <button className="ghost" onClick={() => setOpen(!open)}>
           {open ? 'Less' : 'All metrics'}
         </button>

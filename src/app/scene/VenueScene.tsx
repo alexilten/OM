@@ -5,6 +5,7 @@ import * as THREE from 'three';
 import { toDeg } from '../../engine/coordinates';
 import { mediaBounds } from '../../engine/media';
 import { sectionPlane, sphereSection } from '../../engine/section';
+import { GRADES } from '../../engine/immersion';
 import type { Geometry, VenueObject, Vec3 } from '../../engine/types';
 import { isLayerVisible, useStudio } from '../store';
 import { annularSectorGeometry, blockGeometry, boxGeometry, calibrationTexture, curvePoints, frameMatrix, sphereGraticule, spherePatchGeometry } from './threeGeometry';
@@ -77,19 +78,23 @@ function Instances({ objects, geometry, color }: { objects: VenueObject[]; geome
   const ref = useRef<THREE.InstancedMesh>(null);
   const selectedId = useStudio((s) => s.selectedId);
   const select = useStudio((s) => s.select);
+  const heatmap = useStudio((s) => s.heatmap);
+  const analysis = useStudio((s) => s.analysis);
   useEffect(() => {
     const mesh = ref.current;
     if (!mesh) return;
     const base = new THREE.Color(color);
     const hi = new THREE.Color(COLORS.seatSelected);
+    const gradeColor = new Map(GRADES.map((g) => [g.grade, new THREE.Color(g.color)]));
     objects.forEach((o, i) => {
       mesh.setMatrixAt(i, frameMatrix((o.geometry as Extract<Geometry, { kind: 'blockInstance' }>).frame));
-      mesh.setColorAt(i, o.id === selectedId ? hi : base);
+      const a = heatmap ? analysis?.seats.get(o.id) : undefined;
+      mesh.setColorAt(i, o.id === selectedId ? hi : a ? gradeColor.get(a.grade)! : base);
     });
     mesh.instanceMatrix.needsUpdate = true;
     if (mesh.instanceColor) mesh.instanceColor.needsUpdate = true;
     mesh.computeBoundingSphere();
-  }, [objects, selectedId, color]);
+  }, [objects, selectedId, color, heatmap, analysis]);
   return (
     <instancedMesh
       key={objects.length}
@@ -153,6 +158,33 @@ function SectionOverlay() {
   );
 }
 
+/** Sightline from the selected seat's eye to the stage focus, plus the blocking seat's eye when one limits it. */
+function SeatSightline() {
+  const id = useStudio((s) => s.selectedId);
+  const model = useStudio((s) => s.model);
+  const analysis = useStudio((s) => s.analysis);
+  const seat = id ? model.seats.find((x) => x.id === id) : undefined;
+  const a = seat ? analysis?.seats.get(seat.id) : undefined;
+  if (!seat || !a || !analysis) return null;
+  const blocker = a.blockingSeatId ? model.seats.find((x) => x.id === a.blockingSeatId) : undefined;
+  const color = GRADES.find((g) => g.grade === a.grade)!.color;
+  return (
+    <group>
+      <Line points={[seat.eyePoint, analysis.focusPoint]} color={color} lineWidth={2.5} />
+      <mesh position={analysis.focusPoint}>
+        <sphereGeometry args={[0.1, 16, 12]} />
+        <meshBasicMaterial color={color} />
+      </mesh>
+      {blocker && (
+        <mesh position={blocker.eyePoint}>
+          <sphereGeometry args={[0.09, 16, 12]} />
+          <meshBasicMaterial color={COLORS.eye} />
+        </mesh>
+      )}
+    </group>
+  );
+}
+
 export function VenueScene() {
   const model = useStudio((s) => s.model);
   const vis = useStudio((s) => s.layerVisible);
@@ -207,6 +239,7 @@ export function VenueScene() {
       )}
       {eyes.length > 0 && isLayerVisible(vis, '07_ANALYSIS/Eye_Points') && <EyePoints objects={eyes} />}
       <SectionOverlay />
+      <SeatSightline />
     </group>
   );
 }

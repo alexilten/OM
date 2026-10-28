@@ -1,4 +1,5 @@
 import type { Vec3 } from '../engine/types';
+import { DEFAULT_ANALYSIS, GRADES, METRIC_INFO, type ImmersionMetricKey, type SeatAnalysis } from '../engine/immersion';
 import { formatLength } from '../engine/units';
 import { useStudio } from './store';
 
@@ -12,6 +13,7 @@ export function SelectionPanel() {
   const viewFromSeat = useStudio((s) => s.viewFromSeat);
   const fov = useStudio((s) => s.fov);
   const setFov = useStudio((s) => s.setFov);
+  const analysis = useStudio((s) => s.analysis);
   if (!id) return null;
   const o = model.objects.find((x) => x.id === id);
   if (!o) return null;
@@ -70,9 +72,79 @@ export function SelectionPanel() {
             </div>
             <input type="range" min={30} max={110} step={1} value={fov} onChange={(e) => setFov(Number(e.target.value))} />
           </div>
-          <p className="hint small">Immersion scoring and sightline analysis arrive in Round 02.</p>
+          {analysis?.seats.get(seat.id) && <SeatScore a={analysis.seats.get(seat.id)!} units={units} />}
         </>
       )}
+    </div>
+  );
+}
+
+const KEYS = Object.keys(METRIC_INFO) as ImmersionMetricKey[];
+
+function measurement(k: ImmersionMetricKey, v: number, units: 'm' | 'ft') {
+  if (!Number.isFinite(v)) return k === 'sightline' ? 'clear' : '—';
+  const unit = METRIC_INFO[k].unit;
+  if (unit === '%') return `${Math.round(v * 100)}%`;
+  if (unit === 'm') return formatLength(v, units, 2);
+  return `${v.toFixed(0)}°`;
+}
+
+/** Every number behind the seat's score: measurement, sub-score, normalised weight, contribution. */
+function SeatScore({ a, units }: { a: SeatAnalysis; units: 'm' | 'ft' }) {
+  const weights = useStudio((s) => s.config.analysis?.weights ?? DEFAULT_ANALYSIS.weights);
+  const model = useStudio((s) => s.model);
+  const select = useStudio((s) => s.select);
+  const total = KEYS.reduce((t, k) => t + weights[k], 0) || 1;
+  const grade = GRADES.find((g) => g.grade === a.grade)!;
+  const blocker = a.blockingSeatId ? model.seats.find((s) => s.id === a.blockingSeatId) : undefined;
+  return (
+    <div className="seat-score">
+      <div className="score-head">
+        <span className="grade-chip" style={{ background: grade.color }}>
+          {a.grade}
+        </span>
+        <strong>{a.score.toFixed(2)}</strong>
+        <span className="hint small">immersion score</span>
+      </div>
+      <table>
+        <thead>
+          <tr>
+            <th>Metric</th>
+            <th>Value</th>
+            <th>Score</th>
+            <th>Weight</th>
+          </tr>
+        </thead>
+        <tbody>
+          {KEYS.map((k) => (
+            <tr key={k} title={METRIC_INFO[k].help}>
+              <td>{METRIC_INFO[k].label}</td>
+              <td>{measurement(k, a.measurements[k], units)}</td>
+              <td>
+                <span className="bar">
+                  <i style={{ width: `${a.subScores[k] * 100}%` }} />
+                </span>
+                {a.subScores[k].toFixed(2)}
+              </td>
+              <td>{Math.round((weights[k] / total) * 100)}%</td>
+            </tr>
+          ))}
+        </tbody>
+      </table>
+      {blocker && (
+        <p className="hint small">
+          Sightline limited by{' '}
+          <button className="link" onClick={() => select(blocker.id)}>
+            row {blocker.row} seat {blocker.number}
+          </button>
+          .
+        </p>
+      )}
+      {a.warnings.map((w) => (
+        <div key={w} className="issue warning">
+          {w}
+        </div>
+      ))}
     </div>
   );
 }

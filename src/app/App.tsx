@@ -1,3 +1,4 @@
+import { GradeLegend } from './AnalysisPanel';
 import { LayerPanel } from './LayerPanel';
 import { MetricsPanel } from './MetricsPanel';
 import { ParameterPanel } from './ParameterPanel';
@@ -13,6 +14,17 @@ const VIEWS: { name: ViewName; label: string; title: string }[] = [
   { name: 'side', label: 'Side', title: 'From the right (+X)' },
   { name: 'audience', label: 'Origin eye', title: 'Reference eye point at the sphere centre' },
 ];
+
+function HeatLegend() {
+  const heatmap = useStudio((s) => s.heatmap);
+  if (!heatmap) return null;
+  return (
+    <div className="heat-legend">
+      <div className="row-label">Immersion score by seat</div>
+      <GradeLegend />
+    </div>
+  );
+}
 
 function ViewToolbar() {
   const request = useStudio((s) => s.requestView);
@@ -41,6 +53,7 @@ export function App() {
           <ViewToolbar />
           <MetricsPanel />
           <SelectionPanel />
+          <HeatLegend />
           <div className="coords-legend">
             <span className="x">X</span> right · <span className="y">Y</span> forward · <span className="z">Z</span> up · origin = sphere centre
           </div>

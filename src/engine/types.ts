@@ -6,6 +6,8 @@
  * All lengths are metres and all angles in the configuration are degrees; generated geometry uses radians.
  */
 
+import type { AnalysisSettings } from './immersion';
+
 export type Vec3 = [number, number, number];
 
 // ─── Verification ────────────────────────────────────────────────────────────
@@ -128,6 +130,8 @@ export interface VenueConfiguration {
   stage: StageDefinition;
   envelope: EnvelopeDefinition;
   ledPreview: LedPreviewDefinition;
+  /** Immersion weights and ramps. Optional so Round 01 files still open; defaults apply when absent. */
+  analysis?: AnalysisSettings;
 }
 
 // ─── Component library ───────────────────────────────────────────────────────

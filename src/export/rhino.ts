@@ -14,6 +14,7 @@
 import type rhino3dmFactory from 'rhino3dm';
 import { LAYERS, ROOT_LAYER, rhinoLayerPath } from '../engine/layers';
 import { spherePoint } from '../engine/coordinates';
+import { analysisObjects, seatAnalysisMetadata, type ImmersionAnalysis } from '../engine/immersion';
 import { spherePatchNurbs } from '../engine/nurbs';
 import type { Frame, Geometry, VenueModel, VenueObject } from '../engine/types';
 
@@ -39,6 +40,7 @@ export interface ExportManifest {
   countsByKind: Record<string, number>;
   blocks: { name: string; instances: number }[];
   seatCount: number;
+  immersion?: { average: number; premiumCount: number; warningCount: number; gradeCounts: Record<string, number> };
   sphereRadius: number;
   media: { azimuth0: number; azimuth1: number; elevation0: number; elevation1: number };
   checkpoints: { id: string; point: [number, number, number] }[];
@@ -147,7 +149,13 @@ function attributesFor(rh: Rhino, o: VenueObject, layerIndex: number, configId: 
   return a;
 }
 
-export function buildRhinoDocument(rh: Rhino, model: VenueModel, state: ExportState = 'current') {
+export interface ExportOptions {
+  state?: ExportState;
+  /** When given, seats carry their immersion score and grade, and sightlines/targets go on 07_ANALYSIS. */
+  analysis?: ImmersionAnalysis;
+}
+
+export function buildRhinoDocument(rh: Rhino, model: VenueModel, { state = 'current', analysis }: ExportOptions = {}) {
   const doc = new rh.File3dm();
   const settings = doc.settings();
   settings.modelUnitSystem = rh.UnitSystem.Meters;
@@ -176,7 +184,7 @@ export function buildRhinoDocument(rh: Rhino, model: VenueModel, state: ExportSt
   }
 
   const configId = model.config.id;
-  const objects = model.objects;
+  const objects = analysis ? [...model.objects, ...analysisObjects(model, analysis)] : model.objects;
   const countsByLayer: Record<string, number> = {};
   const countsByKind: Record<string, number> = {};
   const instancesPerBlock = new Map<string, number>();
@@ -203,6 +211,8 @@ export function buildRhinoDocument(rh: Rhino, model: VenueModel, state: ExportSt
     const li = layerIndex.get(o.layer);
     if (li === undefined) throw new Error(`Unknown layer ${o.layer}`);
     const attrs = attributesFor(rh, o, li, configId);
+    const seatAnalysis = analysis?.seats.get(o.id);
+    if (seatAnalysis) for (const [k, v] of Object.entries(seatAnalysisMetadata(seatAnalysis))) attrs.setUserString(`om.${k}`, String(v));
     if (o.geometry.kind === 'blockInstance') {
       const block = model.blocks.find((b) => b.id === (o.geometry as { blockId: string }).blockId)!;
       // The runtime constructor takes (parentIdefId, xform); the bundled typings omit it.
@@ -232,6 +242,12 @@ export function buildRhinoDocument(rh: Rhino, model: VenueModel, state: ExportSt
     countsByKind,
     blocks: [...instancesPerBlock].map(([name, instances]) => ({ name, instances })),
     seatCount: objects.filter((o) => o.category === 'Seat').length,
+    immersion: analysis && {
+      average: +analysis.average.toFixed(4),
+      premiumCount: analysis.premiumCount,
+      warningCount: analysis.warningCount,
+      gradeCounts: analysis.gradeCounts,
+    },
     sphereRadius: model.config.sphere.radius,
     media: { azimuth0: media.azimuth0, azimuth1: media.azimuth1, elevation0: media.elevation0, elevation1: media.elevation1 },
     checkpoints: objects
@@ -259,8 +275,8 @@ export function buildRhinoDocument(rh: Rhino, model: VenueModel, state: ExportSt
   return { doc, manifest };
 }
 
-export function exportRhino(rh: Rhino, model: VenueModel, state: ExportState = 'current'): { bytes: Uint8Array; manifest: ExportManifest } {
-  const { doc, manifest } = buildRhinoDocument(rh, model, state);
+export function exportRhino(rh: Rhino, model: VenueModel, options: ExportOptions = {}): { bytes: Uint8Array; manifest: ExportManifest } {
+  const { doc, manifest } = buildRhinoDocument(rh, model, options);
   const bytes = doc.toByteArray();
   // Free the wasm-side document (embind object).
   (doc as unknown as { delete(): void }).delete();

@@ -87,5 +87,11 @@ export function validateConfig(c: VenueConfiguration): Issue[] {
       err('ledPreview.bandRows', 'led-rows', 'LED preview rows must be a whole number from 1 to 40.');
   }
 
+  if (c.analysis) {
+    const w = Object.values(c.analysis.weights);
+    if (w.some((v) => !finite(v) || v < 0)) err('analysis.weights', 'weights', 'Immersion weights must be zero or positive numbers.');
+    else if (w.every((v) => v === 0)) err('analysis.weights', 'weights-zero', 'At least one immersion weight must be above zero.');
+  }
+
   return issues;
 }

@@ -1,3 +1,4 @@
+import { DEFAULT_ANALYSIS } from './immersion';
 import type { VenueConfiguration } from './types';
 
 /**
@@ -31,6 +32,7 @@ export const OM_300_FLAGSHIP: VenueConfiguration = {
   stage: { type: 'cinematic', width: 9, depth: 3.2, height: 0.9, centerY: 9.0 },
   envelope: { serviceZone: 1.5, overheadClearance: 2.0 },
   ledPreview: { enabled: true, productId: 'roe-ruby-c-rbc2.6f', bandElevationDeg: 10, bandRows: 3 },
+  analysis: DEFAULT_ANALYSIS,
 };
 
 export function cloneConfig(c: VenueConfiguration): VenueConfiguration {
