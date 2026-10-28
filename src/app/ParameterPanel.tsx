@@ -10,6 +10,7 @@ import { LedSection } from './LedPanel';
 import { TransformSection } from './TransformPanel';
 import { BuildingSection, PresetSection } from './VenuePanel';
 import { FitoutSection, SystemsSection } from './SystemsPanel';
+import { StructureSection } from './StructurePanel';
 
 const F = (path: string, label: string, kind: FieldSpec['kind'], min: number, max: number, step: number, tip: string): FieldSpec => ({ path, label, kind, min, max, step, tip });
 
@@ -152,7 +153,7 @@ export function ParameterPanel() {
   const setMediaDisplay = useStudio((s) => s.setMediaDisplay);
   const transform = useStudio((s) => s.workspace === 'TRANSFORM');
   return (
-    <aside className="panel right">
+    <aside className="panel params">
       <IssueList />
       <Section title="Venue preset" defaultOpen={false}>
         <PresetSection />
@@ -201,6 +202,9 @@ export function ParameterPanel() {
       </Section>
       <Section title="Immersion systems" defaultOpen={false}>
         <SystemsSection />
+      </Section>
+      <Section title="Support structure & rigging" defaultOpen={false}>
+        <StructureSection />
       </Section>
       <Section title="Immersion analysis">
         <AnalysisSection />

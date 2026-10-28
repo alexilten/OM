@@ -32,7 +32,7 @@ function formatMetric(m: Metric, units: 'm' | 'ft'): string {
   }
 }
 
-const GROUPS: Metric['group'][] = ['Audience', 'Media', 'Geometry', 'LED', 'Transformation', 'Architecture', 'Systems'];
+const GROUPS: Metric['group'][] = ['Audience', 'Media', 'Geometry', 'LED', 'Transformation', 'Architecture', 'Systems', 'Structure'];
 const HEADLINE = ['aud.seats', 'media.hcoverage', 'media.area', 'sphere.diameter'];
 
 export function MetricsPanel() {

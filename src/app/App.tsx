@@ -64,7 +64,7 @@ export function App() {
     <div className="app">
       <TopBar />
       <main className="workspace">
-        <LayerPanel onCompare={() => setCompare(true)} />
+        <ParameterPanel />
         <div className={`viewport ${transform ? 'transform-mode' : ''}`}>
           <Viewport />
           <ViewToolbar />
@@ -76,7 +76,7 @@ export function App() {
             <span className="x">X</span> right · <span className="y">Y</span> forward · <span className="z">Z</span> up · origin = sphere centre
           </div>
         </div>
-        <ParameterPanel />
+        <LayerPanel onCompare={() => setCompare(true)} />
       </main>
       {compare && <CompareView onClose={() => setCompare(false)} />}
     </div>

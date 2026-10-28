@@ -5,8 +5,9 @@
  * placement rules, not a lighting or acoustic design; every cost and most weights are placeholders.
  */
 import { getAudioProduct, getCatalogItem, getSystem, SYSTEMS, type SystemUnit } from '../library/catalog';
-import { cross, normalize, scale, spherePoint, sub, toRad, toSpherical, add, dot } from './coordinates';
+import { add, facingFrame, scale, spherePoint, toRad, toSpherical } from './coordinates';
 import { mediaBounds, sphereRadiusAt } from './media';
+import type { PickRequest, StructureLayout } from './structure';
 import type { BlockDefinition, Frame, Issue, Metric, SeatRecord, SystemId, Tier, VenueConfiguration, VenueObject, Vec3 } from './types';
 
 export interface UnitTally {
@@ -62,14 +63,6 @@ const TRACKING: Record<string, Partial<Record<Tier, number>>> = { 'trk-cam': { s
 const Z: Vec3 = [0, 0, 1];
 const blockIdOf = (system: SystemId, unit: SystemUnit) => `block.sys.${system}.${unit.id}`;
 
-/** Local frame at `origin` whose +Y faces `target` and +Z stays as close to up as possible. */
-export function facingFrame(origin: Vec3, target: Vec3): Frame {
-  const y = normalize(sub(target, origin));
-  const up = Math.abs(dot(y, Z)) > 0.99 ? normalize([origin[0] || 1e-9, origin[1], 0]) : Z;
-  const z = normalize(sub(up, scale(y, dot(up, y))));
-  return { origin, xAxis: cross(y, z), yAxis: y, zAxis: z };
-}
-
 /** Points spaced evenly (half a step in from the start) along a closed polyline. */
 function alongClosed(points: Vec3[], n: number, phase = 0.5): Vec3[] {
   const segs = points.map((p, i) => [p, points[(i + 1) % points.length]] as const);
@@ -90,7 +83,8 @@ const circlePoints = (r: number, z: number, n: number, phase = 0): Vec3[] => Arr
 /** Plan distance of the farthest corner of a rectangle about (0, cy). */
 const rectReach = (hx: number, cy: number, hy: number) => Math.max(Math.hypot(hx, cy - hy), Math.hypot(hx, cy + hy));
 
-export function generateSystems(c: VenueConfiguration, objects: VenueObject[], seats: SeatRecord[]) {
+/** `layout`: the support structure, when enabled; arrays then sit in its bays and every hung load becomes a pick request. */
+export function generateSystems(c: VenueConfiguration, objects: VenueObject[], seats: SeatRecord[], layout?: StructureLayout) {
   const out: VenueObject[] = [];
   const blocks = new Map<string, BlockDefinition>();
   const issues: Issue[] = [];
@@ -99,8 +93,12 @@ export function generateSystems(c: VenueConfiguration, objects: VenueObject[], s
   const f = c.floor.mainFloorElevation;
   const mb = mediaBounds(R, c.media);
   let occlusion = 0;
-  let pickPoints = 0;
-  let pickLoad = 0;
+  const picks: PickRequest[] = [];
+  const hoistPicks = (points: Vec3[], hoist: SystemUnit, load: number, rig: string) =>
+    points.forEach((p, k) => {
+      place('lighting', hoist, RIGGING, 'Hoist', facingFrame(p, [0, 0, p[2]]), { pick_load_kg: +(load / points.length).toFixed(1), rig });
+      picks.push({ id: `${rig.replace(/\s+/g, '-')}.${k}`, source: `${rig} hoist ${k + 1}`, position: [p[0], p[1], p[2] + hoist.size[2]], load: load / points.length + hoist.weight.value, kind: 'hoist' });
+    });
 
   const tally = (system: SystemId, unit: SystemUnit, n: number) => {
     const t = tallies.get(system) ?? new Map<string, UnitTally>();
@@ -205,9 +203,7 @@ export function generateSystems(c: VenueConfiguration, objects: VenueObject[], s
     if (spot) hang(spot, alongClosed(rect, n('lighting', perimeter / 1.5)), () => stageTarget, lightLayer, 'LightingFixture');
     hang(wash, alongClosed(rect, n('lighting', perimeter / (spot ? 2.5 : 2))), () => stageTarget, lightLayer, 'LightingFixture');
     const trussHoists = Math.max(4, Math.ceil(perimeter / 6));
-    alongClosed(rect, trussHoists, 0).forEach((p) => place('lighting', hoist, RIGGING, 'Hoist', facingFrame([p[0], p[1], p[2] + 0.25], [0, 0, p[2] + 0.25]), { pick_load_kg: +(rigLoad / trussHoists).toFixed(1), rig: 'stage truss' }));
-    pickPoints += trussHoists;
-    pickLoad += rigLoad;
+    hoistPicks(alongClosed(rect, trussHoists, 0).map((p) => [p[0], p[1], p[2] + 0.25] as Vec3), hoist, rigLoad, 'stage truss');
 
     // Wash ring at the screen base, just inside the sphere, lighting the room and the audience.
     const wz = f + 0.3;
@@ -238,9 +234,7 @@ export function generateSystems(c: VenueConfiguration, objects: VenueObject[], s
           haloLoad += unit.weight.value;
         });
       const haloHoists = Math.max(4, Math.ceil(circ / 6));
-      circlePoints(hr, hz + 0.25, haloHoists).forEach((p) => place('lighting', hoist, RIGGING, 'Hoist', facingFrame(p, [0, 0, p[2]]), { pick_load_kg: +(haloLoad / haloHoists).toFixed(1), rig: 'halo' }));
-      pickPoints += haloHoists;
-      pickLoad += haloLoad;
+      hoistPicks(circlePoints(hr, hz + 0.25, haloHoists), hoist, haloLoad, 'halo');
     }
   }
 
@@ -252,8 +246,11 @@ export function generateSystems(c: VenueConfiguration, objects: VenueObject[], s
     const main = product.main;
     const [, depth, h] = main.size;
     const modules = product.family === 'matrix' ? product.modulesPerPosition[A.tier] : 1;
-    const gap = 0.35;
+    // In the structure the array's front sits on the ribs' front face; without it, 0.35 m behind the screen.
+    const gap = layout ? layout.front - R : 0.35;
     const rc = R + gap + depth / 2;
+    if (layout && depth > layout.sys.ribDepth + 1e-9)
+      issues.push({ severity: 'info', code: 'audio-deeper-than-ribs', message: `${main.name} is ${((depth - layout.sys.ribDepth) * 1000).toFixed(0)} mm deeper than the ribs; ring girders are notched or the arrays sit between rings.`, path: 'structure.system' });
     if (gap + depth > c.envelope.serviceZone)
       issues.push({ severity: 'warning', code: 'audio-service-zone', message: `${main.name} arrays need ${(gap + depth).toFixed(2)} m behind the screen; the service zone is ${c.envelope.serviceZone.toFixed(2)} m.`, path: 'envelope.serviceZone' });
     const halfAngle = (modules * h) / 2 / rc;
@@ -262,14 +259,23 @@ export function generateSystems(c: VenueConfiguration, objects: VenueObject[], s
     let positions = 0;
     for (const [ri, e] of rings.entries()) {
       const count = Math.max(2, Math.round(product.positionsPerRing[A.tier] * A.scale * Math.cos(e)));
+      // With a structure, positions snap to evenly spread slots inside the bays, clear of the ribs.
+      const perBay = layout ? Math.ceil(count / layout.bays.length) : 1;
+      const slots = layout ? layout.bays.length * perBay : count;
       for (let k = 0; k < count; k++) {
-        const az = mb.az0 + ((k + 0.5) / count) * (mb.az1 - mb.az0);
+        let az = mb.az0 + ((k + 0.5) / count) * (mb.az1 - mb.az0);
+        if (layout) {
+          const slot = Math.floor(((k + 0.5) / count) * slots);
+          const [a0, a1] = layout.bays[Math.floor(slot / perBay)];
+          az = a0 + (((slot % perBay) + 0.5) / perBay) * (a1 - a0);
+        }
         const centre = spherePoint(rc, az, e);
         const frame = facingFrame(centre, [0, 0, 0]);
         for (let m = 0; m < modules; m++) {
           const origin = add(centre, scale(frame.zAxis, (m - modules / 2) * h));
           place('audio', main, layer, 'Speaker', { ...frame, origin }, { ring: ri, position: positions, module: m, product: product.label, front_radius_m: +(R + gap).toFixed(4) });
         }
+        picks.push({ id: `audio.${ri}.${k}`, source: `${product.label} ring ${ri + 1} position ${k + 1}`, position: centre, load: modules * main.weight.value, kind: 'array' });
         positions++;
       }
     }
@@ -278,12 +284,12 @@ export function generateSystems(c: VenueConfiguration, objects: VenueObject[], s
       const closed = mb.el1 > toRad(88);
       const zz = closed ? R + gap : R * Math.sin(mb.el1) + 0.5;
       const nz = Math.max(3, Math.round(4 * A.scale));
-      circlePoints(0.8, zz, nz).forEach((p) => {
+      circlePoints(0.8, zz, nz).forEach((p, k) => {
         const frame = facingFrame(p, [p[0] * 2, p[1] * 2, f]);
         for (let m = 0; m < modules; m++) place('audio', main, layer, 'Speaker', { ...frame, origin: add(p, scale(frame.zAxis, (m - modules / 2) * h)) }, { ring: 'zenith', position: positions, module: m, product: product.label });
+        if (!closed) picks.push({ id: `audio.zenith.${k}`, source: `${product.label} zenith ${k + 1}`, position: [p[0], p[1], p[2] + 0.5], load: modules * main.weight.value, kind: 'hoist' });
         positions++;
       });
-      if (!closed) pickPoints += nz;
     }
     // Subwoofers on the floor behind the screen base.
     const ns = n('audio', SUBS[A.tier]);
@@ -293,9 +299,6 @@ export function generateSystems(c: VenueConfiguration, objects: VenueObject[], s
       const o: Vec3 = [sr * Math.sin(az), sr * Math.cos(az), f];
       place('audio', product.sub, layer, 'Subwoofer', facingFrame(o, [0, 0, f]), { product: product.label });
     }
-    const flown = out.filter((o) => o.category === 'Speaker');
-    pickLoad += flown.length * main.weight.value;
-    pickPoints += product.family === 'matrix' ? positions : Math.ceil(positions / 2);
     issues.push({ severity: 'info', code: 'audio-transparent-screen', message: 'Speakers sit behind the media surface: the LED screen must be acoustically transparent (perforated or open-frame). Confirm transmission loss with the LED supplier.', path: 'systems.audio' });
   }
 
@@ -331,6 +334,29 @@ export function generateSystems(c: VenueConfiguration, objects: VenueObject[], s
       }
     }
   }
+
+  // ── FX safety (Round 06 FX research): laser exclusion and heavy-gas pooling ──
+  const lasers = out.filter((o) => o.metadata.unit === 'fx-laser');
+  const audienceTiers = objects.filter((o) => o.category === 'SeatingTier' && o.geometry.kind === 'annularSector');
+  if (lasers.length && audienceTiers.length) {
+    // Audience-scanning lasers need 3.0 m above (and 2.5 m beside) any surface the audience can reach
+    // (US FDA laser show variance practice). One conservative plane over the whole seating fan.
+    const gs = audienceTiers.map((o) => o.geometry as Extract<VenueObject['geometry'], { kind: 'annularSector' }>);
+    const top = Math.max(f, ...gs.map((g) => g.zTop)) + 3.0;
+    out.push({
+      id: 'fx.laser.exclusion',
+      name: 'Laser_Exclusion_Plane',
+      layer: '07_ANALYSIS/FX_Safety_Volumes',
+      category: 'SafetyVolume',
+      geometry: { kind: 'annularSector', center: gs[0].center, innerRadius: Math.max(0, Math.min(...gs.map((g) => g.innerRadius)) - 2.5), outerRadius: Math.max(...gs.map((g) => g.outerRadius)) + 2.5, angle0: Math.min(...gs.map((g) => g.angle0)), angle1: Math.max(...gs.map((g) => g.angle1)), zBottom: top - 0.02, zTop: top },
+      operatingState: 'seated',
+      metadata: { rule: '3.0 m above / 2.5 m beside audience surfaces', z: +top.toFixed(3), status: 'conceptual' },
+    });
+    const low = lasers.filter((o) => (o.geometry as { frame: Frame }).frame.origin[2] < top);
+    if (low.length) issues.push({ severity: 'warning', code: 'laser-exclusion', message: `${low.length} lasers sit below the audience exclusion plane (${top.toFixed(1)} m); they must not scan the audience from there.`, path: 'systems.lighting' });
+  }
+  if (AT.enabled && AT.tier !== 'standard')
+    issues.push({ severity: 'info', code: 'gas-pooling', message: 'Low fog (and any CO2 effects) is heavier than air and pools at the lowest point of the seating bowl and the stage pit: provide low-level extraction and CO2 / O2 sensors there.', path: 'systems.atmospherics' });
 
   // ── Fit-out: decks, guardrails, accessories ───────────────────────────────
   const deck = getCatalogItem(c.fitout.riserDeck)!;
@@ -389,8 +415,8 @@ export function generateSystems(c: VenueConfiguration, objects: VenueObject[], s
   const summary: SystemsSummary = {
     systems,
     fitout,
-    pickPoints,
-    pickLoad,
+    pickPoints: picks.length,
+    pickLoad: picks.reduce((t, p) => t + p.load, 0),
     occlusion: omega > 0 ? occlusion / omega : 0,
     totals: {
       count: systems.reduce((t, s) => t + s.count, 0),
@@ -410,8 +436,8 @@ export function generateSystems(c: VenueConfiguration, objects: VenueObject[], s
       metric(`sys.${s.id}.power`, `${s.label}: power`, s.power, 'W'),
       metric(`sys.${s.id}.cost`, `${s.label}: cost (placeholder)`, s.cost, 'USD'),
     ]),
-    metric('sys.pickPoints', 'Rigging pick-up points', pickPoints, 'count', 'derived'),
-    metric('sys.pickLoad', 'Suspended load (rigging + flown audio)', pickLoad, 'kg'),
+    metric('sys.pickPoints', 'Rigging pick-up points', summary.pickPoints, 'count', 'derived'),
+    metric('sys.pickLoad', 'Suspended load (rigging + flown audio)', summary.pickLoad, 'kg'),
     metric('sys.occlusion', 'Screen hidden by overhead rigs', `${(summary.occlusion * 100).toFixed(1)} %`, ''),
     metric('sys.power', 'Systems + fit-out power', summary.totals.power, 'W'),
     metric('sys.weight', 'Systems + fit-out weight', summary.totals.weight, 'kg'),
@@ -420,5 +446,5 @@ export function generateSystems(c: VenueConfiguration, objects: VenueObject[], s
   if (summary.occlusion > 0.05)
     issues.push({ severity: 'warning', code: 'rig-occlusion', message: `Overhead rigging hides about ${(summary.occlusion * 100).toFixed(1)} % of the screen from the reference eye.`, path: 'systems.lighting' });
 
-  return { objects: out, blocks: [...blocks.values()], metrics, issues, summary };
+  return { objects: out, blocks: [...blocks.values()], metrics, issues, summary, picks };
 }

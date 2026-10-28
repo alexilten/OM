@@ -1,4 +1,4 @@
-import { getAudioProduct, getCatalogItem, SYSTEMS, type CatalogCategory } from '../library/catalog';
+import { getAudioProduct, getCatalogItem, getStructureSystem, SYSTEMS, type CatalogCategory } from '../library/catalog';
 import { getLedProduct } from '../library/led';
 import { getSeatingProduct } from '../library/seating';
 import type { Issue, VenueConfiguration } from './types';
@@ -150,6 +150,15 @@ export function validateConfig(c: VenueConfiguration): Issue[] {
     if (!finite(s.scale) || s.scale < 0.5 || s.scale > 2) err(`systems.${spec.id}.scale`, 'system-scale', `${spec.label} density must be between 0.5 and 2.`);
   }
   if (c.systems.audio && !getAudioProduct(c.systems.audio.product ?? '')) err('systems.audio.product', 'unknown-audio', `Unknown audio array product "${c.systems.audio.product}".`);
+
+  const st = c.structure;
+  if (st.enabled) {
+    if (!getStructureSystem(st.system)) err('structure.system', 'unknown-structure', `Unknown structure system "${st.system}".`);
+    if (!finite(st.ribSpacing) || st.ribSpacing < 1 || st.ribSpacing > 8) err('structure.ribSpacing', 'structure-ribs', 'Rib spacing must be between 1 and 8 m.');
+    if (!finite(st.ringSpacing) || st.ringSpacing < 1 || st.ringSpacing > 8) err('structure.ringSpacing', 'structure-rings', 'Ring spacing must be between 1 and 8 m.');
+    if (!finite(st.mountGap) || st.mountGap < 0 || st.mountGap > 0.5) err('structure.mountGap', 'structure-gap', 'Mounting gap must be between 0 and 0.5 m.');
+    if (!finite(st.maxSegment) || st.maxSegment < 2 || st.maxSegment > 13.5) err('structure.maxSegment', 'structure-segment', 'Shipping segment length must be between 2 and 13.5 m.');
+  }
 
   if (c.analysis) {
     const w = Object.values(c.analysis.weights);

@@ -231,3 +231,94 @@ export const AUDIO_PRODUCTS: AudioProduct[] = [
 
 export const getAudioProduct = (id: string) => AUDIO_PRODUCTS.find((a) => a.id === id);
 
+
+// ─── Support structure behind the media surface ─────────────────────────────
+
+/** A rib and ring girder product family. Masses per metre and costs are placeholders unless noted. */
+export interface StructureSystem {
+  id: string;
+  tier: Tier;
+  name: string;
+  description: string;
+  /** Rib section depth (radial) and width (m). */
+  ribDepth: number;
+  ribWidth: number;
+  ribKgPerM: SpecValue;
+  /** Ring girder section depth (radial) and width (m); rings sit on the outer face of the ribs. */
+  ringDepth: number;
+  ringWidth: number;
+  ringKgPerM: SpecValue;
+  /** Node bracket (rib × ring), splice and base plate masses (kg). */
+  nodeKg: SpecValue;
+  spliceKg: SpecValue;
+  baseKg: SpecValue;
+  /** Fabricated, delivered cost per kg (USD). */
+  costPerKg: SpecValue;
+  /** Crane or hoist picks one crew sets per day. */
+  picksPerDay: number;
+}
+
+const rhs = (h: number, b: number, t: number) => +(2 * (h + b) * t * 7850).toFixed(1);
+
+export const STRUCTURE_SYSTEMS: StructureSystem[] = [
+  {
+    id: 'steel-truss',
+    tier: 'standard',
+    name: 'Curved steel box-truss ribs + RHS rings',
+    description: 'Industry-standard: rolled steel box-truss ribs, RHS 200×100 ring girders, bolted splices, galvanised. Heaviest, cheapest per kg, any steel fabricator.',
+    ribDepth: 0.45,
+    ribWidth: 0.3,
+    ribKgPerM: p(38, 'Steel box truss, 450 × 300, CHS chords'),
+    ringDepth: 0.2,
+    ringWidth: 0.1,
+    ringKgPerM: p(rhs(0.2, 0.1, 0.006), 'RHS 200×100×6 from section and 7,850 kg/m³'),
+    nodeKg: p(25),
+    spliceKg: p(14),
+    baseKg: p(45),
+    costPerKg: p(6.5),
+    picksPerDay: 14,
+  },
+  {
+    id: 'rhs-rolled',
+    tier: 'premium',
+    name: 'Rolled RHS ribs + RHS rings',
+    description: 'Rolled RHS 300×200 ribs: shallower than truss, so more room for audio and walkways; cleaner for perforated screens.',
+    ribDepth: 0.3,
+    ribWidth: 0.2,
+    ribKgPerM: p(rhs(0.3, 0.2, 0.008), 'RHS 300×200×8 from section and 7,850 kg/m³'),
+    ringDepth: 0.2,
+    ringWidth: 0.1,
+    ringKgPerM: p(rhs(0.2, 0.1, 0.006), 'RHS 200×100×6 from section and 7,850 kg/m³'),
+    nodeKg: p(30),
+    spliceKg: p(20),
+    baseKg: p(55),
+    costPerKg: p(7.5),
+    picksPerDay: 14,
+  },
+  {
+    id: 'alu-curved',
+    tier: 'flagship',
+    name: 'Curved aluminium space-frame ribs',
+    description: 'Purpose-built curved aluminium ribs with integrated LED rails and cable trays: about a third of the steel weight, faster install, highest cost per kg.',
+    ribDepth: 0.35,
+    ribWidth: 0.25,
+    ribKgPerM: p(14),
+    ringDepth: 0.15,
+    ringWidth: 0.1,
+    ringKgPerM: p(7),
+    nodeKg: p(8),
+    spliceKg: p(5),
+    baseKg: p(30),
+    costPerKg: p(24),
+    picksPerDay: 22,
+  },
+];
+
+export const getStructureSystem = (id: string) => STRUCTURE_SYSTEMS.find((s) => s.id === id);
+
+/** Shipping envelopes (inside length × width × height, m), smallest first. */
+export const SHIPPING: { id: string; label: string; dims: [number, number, number] }[] = [
+  { id: 'container-20', label: "20' container", dims: [5.9, 2.35, 2.39] },
+  { id: 'container-40', label: "40' container", dims: [12.03, 2.35, 2.39] },
+  { id: 'trailer', label: 'Standard trailer', dims: [13.6, 2.45, 2.7] },
+];

@@ -13,7 +13,7 @@
  * so no engine coordinate is ever rewritten for display, and the CAD export writes engine
  * coordinates unchanged (Rhino is Z-up too).
  */
-import type { Vec3 } from './types';
+import type { Frame, Vec3 } from './types';
 
 export const WORLD_ORIGIN: Vec3 = [0, 0, 0];
 export const AXIS_X: Vec3 = [1, 0, 0];
@@ -47,3 +47,12 @@ export const cross = (a: Vec3, b: Vec3): Vec3 => [
 ];
 export const length = (a: Vec3) => Math.hypot(a[0], a[1], a[2]);
 export const normalize = (a: Vec3): Vec3 => scale(a, 1 / length(a));
+
+/** Local frame at `origin` whose +Y faces `target` and +Z stays as close to up as possible. */
+export function facingFrame(origin: Vec3, target: Vec3): Frame {
+  const y = normalize(sub(target, origin));
+  const up: Vec3 = Math.abs(dot(y, AXIS_Z)) > 0.99 ? normalize([origin[0] || 1e-9, origin[1], 0]) : AXIS_Z;
+  const z = normalize(sub(up, scale(y, dot(up, y))));
+  return { origin, xAxis: cross(y, z), yAxis: y, zAxis: z };
+}
+

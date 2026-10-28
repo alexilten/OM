@@ -19,7 +19,7 @@ import { buildPreset, VENUE_PRESETS } from '../src/engine/presets';
 import type { Tier, VenueConfiguration } from '../src/engine/types';
 import { exportRhino } from '../src/export/rhino';
 
-const ROUND = 'round06';
+const ROUND = 'round07';
 const arg = process.argv[2];
 const AUDIO_BY_TIER: Record<Tier, string> = { standard: 'l-isa-x8', premium: 'db-soundscape', flagship: 'holoplot-x1' };
 const pkg = (tier: Tier): VenueConfiguration => {

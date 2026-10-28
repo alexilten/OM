@@ -20,7 +20,7 @@ export function LayerPanel({ onCompare }: { onCompare: () => void }) {
   }, [model]);
 
   return (
-    <aside className="panel left">
+    <aside className="panel layers">
       <ProjectPanel onCompare={onCompare} />
       <div className="panel-heading">Layers</div>
       <div className="layer-tree">

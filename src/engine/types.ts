@@ -11,6 +11,7 @@ import type { LedSummary } from './led';
 import type { TransformationModel } from './kinetics';
 import type { BuildingFit } from './building';
 import type { SystemsSummary } from './systems';
+import type { StructureSummary } from './structure';
 
 export type Vec3 = [number, number, number];
 
@@ -182,6 +183,27 @@ export interface BuildingDefinition {
   };
 }
 
+/**
+ * Support structure behind the media surface (Round 07): curved ribs on meridians and ring girders on
+ * latitudes, generated from the media patch and the LED depth, split into shippable segments. It is
+ * also the rigging backbone: audio arrays hang in its bays and hoists pick up from it.
+ */
+export interface StructureDefinition {
+  enabled: boolean;
+  /** Rib and ring product family (id into STRUCTURE_SYSTEMS). */
+  system: string;
+  /** Target rib spacing measured along the equator (m). */
+  ribSpacing: number;
+  /** Target ring girder spacing measured along a rib (m). */
+  ringSpacing: number;
+  /** Gap between the back of the LED and the front of the ribs (m). */
+  mountGap: number;
+  /** Longest segment (arc length) shipped in one piece (m). */
+  maxSegment: number;
+  /** Service walkways behind the structure on alternate ring levels. */
+  walkways: boolean;
+}
+
 /** The two end states of the transformation. */
 export type VenueState = 'seated' | 'standing';
 
@@ -230,6 +252,7 @@ export interface VenueConfiguration {
   building: BuildingDefinition;
   fitout: FitoutDefinition;
   systems: SystemsDefinition;
+  structure: StructureDefinition;
   /** The state the venue is shown and exported in outside the TRANSFORM timeline. */
   operatingState: VenueState;
   preset?: PresetOrigin;
@@ -405,7 +428,7 @@ export interface Metric {
   value: number | string;
   unit?: 'm' | 'm2' | 'm3' | 'deg' | 'count' | 'kg' | 'W' | 'px' | 'USD' | '';
   quality: MetricQuality;
-  group: 'Geometry' | 'Media' | 'LED' | 'Audience' | 'Transformation' | 'Architecture' | 'Systems';
+  group: 'Geometry' | 'Media' | 'LED' | 'Audience' | 'Transformation' | 'Architecture' | 'Systems' | 'Structure';
 }
 
 export type IssueSeverity = 'error' | 'warning' | 'info';
@@ -433,4 +456,6 @@ export interface VenueModel {
   fit?: BuildingFit;
   /** Fit-out and immersion systems: counts, loads and placeholder costs. */
   systems: SystemsSummary;
+  /** Support structure, segments and pick-up schedule, when enabled. */
+  structure?: StructureSummary;
 }
