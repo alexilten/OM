@@ -6,7 +6,7 @@ import { stateAt } from './TransformPanel';
 
 const WORKSPACES: { id: Workspace; round?: string }[] = [
   { id: 'DESIGN' },
-  { id: 'EXPERIENCE', round: 'Round 05' },
+  { id: 'EXPERIENCE', round: 'a later round' },
   { id: 'TRANSFORM' },
   { id: 'ANALYZE' },
   { id: 'EXPORT', round: 'Round 06' },
