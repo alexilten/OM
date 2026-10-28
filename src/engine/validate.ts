@@ -40,6 +40,13 @@ export function validateConfig(c: VenueConfiguration): Issue[] {
     ['led.bandElevationDeg', c.led.bandElevationDeg],
     ['led.bandRows', c.led.bandRows],
     ['led.jointGap', c.led.jointGap],
+    ['transformation.nestOffset', c.transformation.nestOffset],
+    ['transformation.deckThickness', c.transformation.deckThickness],
+    ['transformation.foldedSeatHeight', c.transformation.foldedSeatHeight],
+    ['transformation.wagonSpeed', c.transformation.wagonSpeed],
+    ['transformation.stageSpeed', c.transformation.stageSpeed],
+    ['transformation.clearanceHoldS', c.transformation.clearanceHoldS],
+    ['transformation.foldS', c.transformation.foldS],
   ];
   for (const [path, v] of numbers) if (!finite(v)) err(path, 'not-a-number', `${path} must be a finite number.`);
   if (issues.length) return issues;
@@ -88,6 +95,16 @@ export function validateConfig(c: VenueConfiguration): Issue[] {
     if (c.led.placement !== 'tangent' && c.led.placement !== 'balanced') err('led.placement', 'led-placement', 'LED placement must be "tangent" or "balanced".');
     if (!isInt(c.led.bandRows) || c.led.bandRows < 1 || c.led.bandRows > 40) err('led.bandRows', 'led-rows', 'LED band rows must be a whole number from 1 to 40.');
     if (c.led.jointGap < 0 || c.led.jointGap > 0.02) err('led.jointGap', 'led-gap', 'LED joint gap must be between 0 and 20 mm.');
+  }
+
+  const t = c.transformation;
+  if (t.enabled) {
+    if (t.seating !== 'telescopic' && t.seating !== 'fixed') err('transformation.seating', 'kin-seating', 'Seating transformation must be "telescopic" or "fixed".');
+    if (t.stage !== 'lift' && t.stage !== 'fixed') err('transformation.stage', 'kin-stage', 'Stage transformation must be "lift" or "fixed".');
+    if (t.nestOffset <= 0 || t.nestOffset >= c.seating.rowPitch) err('transformation.nestOffset', 'kin-nest', 'Nest offset must be above zero and below the row pitch.');
+    if (t.deckThickness <= 0 || t.foldedSeatHeight <= 0) err('transformation.deckThickness', 'kin-deck', 'Deck thickness and folded seat height must be above zero.');
+    if (t.wagonSpeed <= 0 || t.stageSpeed <= 0) err('transformation.wagonSpeed', 'kin-speed', 'Machinery speeds must be above zero.');
+    if (t.clearanceHoldS < 0 || t.foldS < 0) err('transformation.clearanceHoldS', 'kin-time', 'Hold and fold times cannot be negative.');
   }
 
   if (c.analysis) {

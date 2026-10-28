@@ -3,6 +3,7 @@
  * no geometry or configuration leaves the machine.
  */
 import type { ImmersionAnalysis } from '../engine/immersion';
+import type { ExportState } from '../export/rhino';
 import wasmUrl from 'rhino3dm/rhino3dm.wasm?url';
 import { normalizeConfig } from '../engine/defaults';
 import type { VenueConfiguration, VenueModel } from '../engine/types';
@@ -22,12 +23,12 @@ const slug = (s: string) => s.replace(/[^A-Za-z0-9]+/g, '_').replace(/^_|_$/g, '
 
 let rhinoPromise: Promise<unknown> | null = null;
 
-export async function exportRhinoFile(model: VenueModel, analysis?: ImmersionAnalysis) {
+export async function exportRhinoFile(model: VenueModel, analysis?: ImmersionAnalysis, state: ExportState = 'seated') {
   const [{ default: rhino3dm }, { exportRhino }] = await Promise.all([import('rhino3dm/rhino3dm.module.js'), import('../export/rhino')]);
   rhinoPromise ??= rhino3dm({ locateFile: () => wasmUrl });
   const rh = (await rhinoPromise) as Awaited<ReturnType<typeof rhino3dm>>;
-  const { bytes, manifest } = exportRhino(rh, model, { analysis });
-  download(bytes as BlobPart, `${slug(model.config.name)}_${stamp()}.3dm`, 'application/octet-stream');
+  const { bytes, manifest } = exportRhino(rh, model, { analysis, state });
+  download(bytes as BlobPart, `${slug(model.config.name)}${state === 'standing' ? '_standing' : ''}_${stamp()}.3dm`, 'application/octet-stream');
   return manifest;
 }
 

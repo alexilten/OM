@@ -8,6 +8,7 @@
 
 import type { AnalysisSettings } from './immersion';
 import type { LedSummary } from './led';
+import type { TransformationModel } from './kinetics';
 
 export type Vec3 = [number, number, number];
 
@@ -126,6 +127,31 @@ export interface LedSystemDefinition {
   jointGap: number;
 }
 
+/**
+ * Seated ↔ standing transformation. Every value here is conceptual: the machinery is not engineered,
+ * and the checks are geometric only.
+ */
+export interface TransformationDefinition {
+  enabled: boolean;
+  /** Telescopic: each row block is a wagon that nests under the back row. Fixed: seats stay put. */
+  seating: 'telescopic' | 'fixed';
+  /** Plan offset left between nested wagons (m). */
+  nestOffset: number;
+  /** Wagon deck thickness (m). */
+  deckThickness: number;
+  /** Height of a folded seat above its deck (m). */
+  foldedSeatHeight: number;
+  /** Wagon travel speed (m/s). */
+  wagonSpeed: number;
+  /** Lift: the stage deck lowers flush with the floor for standing. */
+  stage: 'lift' | 'fixed';
+  stageSpeed: number;
+  /** Hold before any motion while the audience clears the moving zones (s). */
+  clearanceHoldS: number;
+  /** Seat fold time (s). */
+  foldS: number;
+}
+
 export interface VenueConfiguration {
   schemaVersion: 1;
   id: string;
@@ -137,6 +163,7 @@ export interface VenueConfiguration {
   stage: StageDefinition;
   envelope: EnvelopeDefinition;
   led: LedSystemDefinition;
+  transformation: TransformationDefinition;
   /** Immersion weights and ramps. Optional so Round 01 files still open; defaults apply when absent. */
   analysis?: AnalysisSettings;
 }
@@ -297,6 +324,8 @@ export interface SeatRecord {
   screenClearance: number;
   distanceFromOrigin: number;
   accessible: boolean;
+  /** Aisle block within the row (0 = leftmost seen from the stage side). */
+  block: number;
 }
 
 export type MetricQuality = 'exact' | 'derived' | 'estimate' | 'conceptual';
@@ -307,7 +336,7 @@ export interface Metric {
   value: number | string;
   unit?: 'm' | 'm2' | 'm3' | 'deg' | 'count' | 'kg' | 'W' | 'px' | '';
   quality: MetricQuality;
-  group: 'Geometry' | 'Media' | 'LED' | 'Audience' | 'Architecture';
+  group: 'Geometry' | 'Media' | 'LED' | 'Audience' | 'Transformation' | 'Architecture';
 }
 
 export type IssueSeverity = 'error' | 'warning' | 'info';
@@ -329,4 +358,6 @@ export interface VenueModel {
   issues: Issue[];
   /** LED panelization totals, when the LED system is enabled. */
   led?: LedSummary;
+  /** Kinetic assemblies and the seated → standing sequence, when enabled. */
+  transformation?: TransformationModel;
 }

@@ -118,7 +118,7 @@ describe('seating', () => {
     const c = cloneConfig(OM_300_FLAGSHIP);
     c.seating.riserHeight = 0.4;
     const steeper = generateVenue(c);
-    const tierK = steeper.objects.find((o) => o.id === 'tier.K')!.geometry as Extract<Geometry, { kind: 'annularSector' }>;
+    const tierK = steeper.objects.find((o) => o.id.startsWith('tier.K.'))!.geometry as Extract<Geometry, { kind: 'annularSector' }>;
     const seatK = steeper.seats.find((s) => s.row === 'K')!;
     expect(tierK.zTop).toBeCloseTo(seatK.position[2]);
     expect(seatK.eyePoint[2] - seatK.position[2]).toBeCloseTo(product.eyeHeight.value);

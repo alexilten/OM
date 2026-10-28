@@ -7,6 +7,7 @@ import { useStudio } from './store';
 import { IssueList } from './IssueList';
 import { AnalysisSection, CapacityTarget } from './AnalysisPanel';
 import { LedSection } from './LedPanel';
+import { TransformSection } from './TransformPanel';
 
 const F = (path: string, label: string, kind: FieldSpec['kind'], min: number, max: number, step: number, tip: string): FieldSpec => ({ path, label, kind, min, max, step, tip });
 
@@ -147,9 +148,15 @@ export function ParameterPanel() {
   const setParam = useStudio((s) => s.setParam);
   const mediaDisplay = useStudio((s) => s.mediaDisplay);
   const setMediaDisplay = useStudio((s) => s.setMediaDisplay);
+  const transform = useStudio((s) => s.workspace === 'TRANSFORM');
   return (
     <aside className="panel right">
       <IssueList />
+      {transform && (
+        <Section title="Transformation">
+          <TransformSection />
+        </Section>
+      )}
       <Section title="Reference sphere">
         <SphereSize />
       </Section>
@@ -203,6 +210,11 @@ export function ParameterPanel() {
       <Section title="LED system" defaultOpen={false}>
         <LedSection />
       </Section>
+      {!transform && (
+        <Section title="Transformation" defaultOpen={false}>
+          <TransformSection />
+        </Section>
+      )}
       <Section title="Design envelope" defaultOpen={false}>
         {ENVELOPE.map((f) => (
           <ParamField key={f.path} spec={f} />

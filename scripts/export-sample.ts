@@ -4,6 +4,7 @@
  *   npm run export:sample                       # OM 300 / Flagship
  *   npm run export:sample -- my-config.json     # any saved OM Studio configuration
  *
+ * Writes the seated state and, when the venue transforms, the standing state too.
  * Then: npm run validate:3dm -- exports/<name>.3dm
  */
 import { mkdirSync, readFileSync, writeFileSync } from 'node:fs';
@@ -20,11 +21,12 @@ const config: VenueConfiguration = arg ? normalizeConfig(JSON.parse(readFileSync
 const model = generateVenue(config);
 const rh = await rhino3dm();
 const analysis = analyzeImmersion(model, config.analysis);
-const { bytes, manifest } = exportRhino(rh, model, { analysis });
-
 const outDir = resolve('exports');
 mkdirSync(outDir, { recursive: true });
-const base = resolve(outDir, `${config.id}_round03`);
-writeFileSync(`${base}.3dm`, bytes);
-writeFileSync(`${base}.manifest.json`, JSON.stringify(manifest, null, 2));
-console.log(`Wrote ${base}.3dm (${(bytes.length / 1024).toFixed(0)} KB, ${manifest.objectCount} objects, ${manifest.seatCount} seats, immersion avg ${analysis.average.toFixed(2)})`);
+for (const state of model.transformation ? (['seated', 'standing'] as const) : (['seated'] as const)) {
+  const { bytes, manifest } = exportRhino(rh, model, { analysis, state });
+  const base = resolve(outDir, `${config.id}_round04${state === 'standing' ? '_standing' : ''}`);
+  writeFileSync(`${base}.3dm`, bytes);
+  writeFileSync(`${base}.manifest.json`, JSON.stringify(manifest, null, 2));
+  console.log(`Wrote ${base}.3dm (${state}, ${(bytes.length / 1024).toFixed(0)} KB, ${manifest.objectCount} objects, ${manifest.seatCount} seats${state === 'seated' ? `, immersion avg ${analysis.average.toFixed(2)}` : ''})`);
+}

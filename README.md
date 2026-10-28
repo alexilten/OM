@@ -17,14 +17,15 @@ npm run build        # type-check + production build
 
 ## Rhino export
 
-In the app: **EXPORT RHINO** (top right) downloads a `.3dm` of the current configuration.
+In the app: **EXPORT RHINO** (top right) downloads a `.3dm` of the current configuration. In the TRANSFORM
+workspace, with the timeline at its standing end, it exports the standing state instead.
 
 From the command line, and with an independent check using McNeel's Python `rhino3dm`:
 
 ```bash
-npm run export:sample                              # writes exports/om-300-flagship_round03.3dm
+npm run export:sample                              # writes exports/om-300-flagship_round04.3dm (+ _standing)
 python3 -m venv .venv-validate && .venv-validate/bin/pip install rhino3dm
-.venv-validate/bin/python scripts/validate_3dm.py exports/om-300-flagship_round03.3dm
+.venv-validate/bin/python scripts/validate_3dm.py exports/om-300-flagship_round04.3dm
 ```
 
 `npm run export:sample -- path/to/saved.omstudio.json` exports any configuration saved from the app.

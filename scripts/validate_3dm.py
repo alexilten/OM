@@ -146,15 +146,23 @@ def main(path):
         else:
             got = bbox(g)[0]
         rep.check(math.dist(got, cp["point"]) < 1e-6, f"{cp['id']} at {tuple(round(v, 4) for v in cp['point'])}")
+    def pose_dz(o):
+        v = o.Attributes.GetUserString("om.pose_offset")
+        return float(v.split(",")[2]) if v else 0.0
     st = config["stage"]
     lo, hi = bbox(by_id["stage.main"].Geometry)
+    stage_dz = pose_dz(by_id["stage.main"])
+    stage_top = hi[2]
     rep.check(abs((hi[0] - lo[0]) - st["width"]) < TOL and abs((hi[1] - lo[1]) - st["depth"]) < TOL and abs((hi[2] - lo[2]) - st["height"]) < TOL,
               "stage dimensions match configuration", f"{hi[0]-lo[0]:.3f} × {hi[1]-lo[1]:.3f} × {hi[2]-lo[2]:.3f} m")
     floor = config["floor"]["mainFloorElevation"]
-    rep.check(abs(lo[2] - floor) < TOL, "stage sits on the main floor", f"z = {lo[2]:.4f}")
+    rep.check(abs(lo[2] - stage_dz - floor) < TOL, "stage sits on the main floor" + (" (before lowering)" if stage_dz else ""), f"z = {lo[2] - stage_dz:.4f}")
     tiers = [o for o in top if o.Attributes.GetUserString("om.category") == "SeatingTier"]
-    bad = [o.Attributes.Name for o in tiers if abs(bbox(o.Geometry)[1][2] - float(o.Attributes.GetUserString("om.tier_top_z"))) > 1e-4 or abs(bbox(o.Geometry)[0][2] - floor) > 1e-4]
-    rep.check(tiers and not bad, f"{len(tiers)} tier platforms span floor → tier top", ", ".join(bad))
+    def tier_bottom(o):
+        v = o.Attributes.GetUserString("om.tier_bottom_z")
+        return float(v) if v else floor
+    bad = [o.Attributes.Name for o in tiers if abs(bbox(o.Geometry)[1][2] - pose_dz(o) - float(o.Attributes.GetUserString("om.tier_top_z"))) > 1e-4 or abs(bbox(o.Geometry)[0][2] - pose_dz(o) - tier_bottom(o)) > 1e-4]
+    rep.check(tiers and not bad, f"{len(tiers)} tier platforms/decks span their stated bottom → tier top", ", ".join(bad))
     half = R + config["envelope"]["serviceZone"]
     outside = [o.Attributes.Name for o in top if any(abs(x) > half + 1e-6 or abs(y) > half + 1e-6 for x, y, _ in exact_points(o.Geometry))]
     rep.check(not outside, f"all objects inside the {2*half:.1f} m design envelope (plan, exact vertices)", ", ".join(outside[:5]))
@@ -234,6 +242,38 @@ def main(path):
         rep.check(not wrong, "seat grades follow the published thresholds", ", ".join(wrong[:5]))
         avg = sum(scores) / len(scores) if scores else 0
         rep.check(abs(avg - imm["average"]) < 1e-3, "seat scores average to the manifest figure", f"{avg:.4f} vs {imm['average']}")
+
+    kin = manifest.get("transformation")
+    if kin:
+        print(f"\nTransformation ({manifest['state']} state)")
+        paths = {o.Attributes.GetUserString("om.assembly"): o for o in top if o.Attributes.GetUserString("om.category") == "MotionPath"}
+        moving = [a for a in kin["assemblies"] if any(a["travel"])]
+        rep.check(len(paths) == len(moving) and all(a["id"] in paths for a in moving), f"one explicit motion path per moving assembly ({len(moving)} of {len(kin['assemblies'])})", f"found {len(paths)}")
+        wrong = []
+        for a in moving:
+            g = paths.get(a["id"])
+            if g is None or not isinstance(g.Geometry, r.LineCurve):
+                wrong.append(a["id"])
+                continue
+            p0, p1 = g.Geometry.PointAtStart, g.Geometry.PointAtEnd
+            if math.dist((p1.X - p0.X, p1.Y - p0.Y, p1.Z - p0.Z), a["travel"]) > 1e-6:
+                wrong.append(a["id"])
+        rep.check(not wrong, "every path is a straight line equal to its assembly's travel", ", ".join(wrong[:5]))
+        rep.check(all("conceptual" in (o.Attributes.GetUserString("om.status") or "") for o in paths.values()), "every path is marked conceptual")
+        hold = min((a["start"] for a in moving), default=0)
+        rep.check(hold >= config["transformation"]["clearanceHoldS"] - 1e-6, f"nothing moves before the {config['transformation']['clearanceHoldS']} s audience clearance", f"first motion at {hold} s")
+        moved = [o for o in top if o.Attributes.GetUserString("om.pose_offset")]
+        expected = sum(a["members"] for a in kin["assemblies"] if any(a["travel"])) if manifest["state"] == "standing" else 0
+        rep.check(len(moved) == expected, f"{expected} objects moved to the {manifest['state']} pose", f"found {len(moved)}")
+        if manifest["state"] == "standing":
+            travel = {a["id"]: a["travel"] for a in kin["assemblies"]}
+            off = [o.Attributes.Name for o in moved if o.Attributes.GetUserString("om.parent_assembly") in travel
+                   and math.dist([float(v) for v in o.Attributes.GetUserString("om.pose_offset").split(",")], travel[o.Attributes.GetUserString("om.parent_assembly")]) > 1e-6]
+            rep.check(not off, "moved seating sits exactly one path length from its seated position", ", ".join(off[:5]))
+            rep.check(all(o.Attributes.GetUserString("om.folded") == "yes" for o in seats if o.Attributes.GetUserString("om.pose_offset")), "moved seats are marked folded")
+            if config["transformation"]["stage"] == "lift":
+                rep.check(abs(stage_top - floor) < TOL, "lowered stage is flush with the floor", f"top z = {stage_top:.4f}")
+            rep.check(not [o for o in top if (o.Attributes.GetUserString("om.layer") or "").startswith("07_ANALYSIS/Sightline")], "no seated sightlines in the standing state")
 
     print()
     if rep.failures:

@@ -3,7 +3,7 @@ import { OM_300_FLAGSHIP } from '../../engine/defaults';
 import { fromDisplay, toDisplay } from '../../engine/units';
 import { getPath, useStudio } from '../store';
 
-export type FieldKind = 'length' | 'angle' | 'count';
+export type FieldKind = 'length' | 'angle' | 'count' | 'value';
 
 export interface FieldSpec {
   path: string;
@@ -13,9 +13,11 @@ export interface FieldSpec {
   max: number;
   step: number;
   tip: string;
+  /** Unit label for kind 'value' (speeds, times). */
+  unit?: string;
 }
 
-const unitLabel = (kind: FieldKind, units: 'm' | 'ft') => (kind === 'length' ? units : kind === 'angle' ? '°' : '');
+const unitLabel = (spec: FieldSpec, units: 'm' | 'ft') => (spec.kind === 'length' ? units : spec.kind === 'angle' ? '°' : (spec.unit ?? ''));
 
 export function NumberInput({ value, onCommit, step, invalid }: { value: number; onCommit: (v: number) => void; step: number; invalid?: boolean }) {
   const digits = step >= 1 ? 0 : step >= 0.1 ? 1 : step >= 0.01 ? 2 : 3;
@@ -63,7 +65,7 @@ export function ParamField({ spec, mirror }: { spec: FieldSpec; mirror?: string 
         <label title={spec.tip}>{spec.label}</label>
         <div className="field-value">
           <NumberInput value={show(value)} step={step} invalid={invalid} onCommit={(v) => setParam(spec.path, store(v))} />
-          <span className="unit">{unitLabel(spec.kind, units)}</span>
+          <span className="unit">{unitLabel(spec, units)}</span>
           <button className={`reset ${value === def ? 'hidden' : ''}`} title={`Reset to ${show(def).toFixed(2)}`} onClick={() => (mirror ? setParam(spec.path, def) : resetParam(spec.path))}>
             ↺
           </button>

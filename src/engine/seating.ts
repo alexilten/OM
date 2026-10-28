@@ -6,7 +6,7 @@
 import { getSeatingProduct } from '../library/seating';
 import { add, cross, scale, toRad } from './coordinates';
 import { sphereRadiusAt } from './media';
-import type { BlockDefinition, Frame, Issue, SeatRecord, SeatingProduct, VenueConfiguration, VenueObject, Vec3 } from './types';
+import type { BlockDefinition, Frame, Geometry, Issue, SeatRecord, SeatingProduct, VenueConfiguration, VenueObject, Vec3 } from './types';
 
 export function rowLabel(i: number): string {
   let s = '';
@@ -19,6 +19,7 @@ export function rowLabel(i: number): string {
 }
 
 export const seatBlockId = (productId: string) => `block.seat.${productId}`;
+export const wagonId = (row: string, block: number) => `wagon.${row}.b${block}`;
 
 /** Proxy seat geometry in the seat's local frame: origin = footprint centre at tier level, +Y = facing. */
 export function seatBlock(p: SeatingProduct): BlockDefinition {
@@ -70,6 +71,7 @@ export function generateSeating(c: VenueConfiguration): SeatingResult {
   const d = product.depth.value;
   const A = toRad(s.sectionAngleDeg);
   const block = seatBlock(product);
+  const telescopic = c.transformation.enabled && c.transformation.seating === 'telescopic';
 
   const stage = c.stage;
   const stageClear = 1.0;
@@ -102,18 +104,19 @@ export function generateSeating(c: VenueConfiguration): SeatingResult {
     bounds.push([start, A / 2]);
 
     const step = w / r;
-    const rowSeats: { alpha: number }[] = [];
-    for (const [b0, b1] of bounds) {
+    const rowSeats: { alpha: number; block: number }[] = [];
+    bounds.forEach(([b0, b1], block) => {
       const n = Math.floor(((b1 - b0) * r + 1e-9) / w);
-      if (n <= 0) continue;
+      if (n <= 0) return;
       const mid = (b0 + b1) / 2;
-      for (let k = 0; k < n; k++) rowSeats.push({ alpha: mid + (k - (n - 1) / 2) * step });
-    }
+      for (let k = 0; k < n; k++) rowSeats.push({ alpha: mid + (k - (n - 1) / 2) * step, block });
+    });
 
     let number = 0;
     let minAlpha = Infinity;
     let maxAlpha = -Infinity;
-    for (const { alpha } of rowSeats) {
+    const blockSpan = bounds.map(() => ({ min: Infinity, max: -Infinity, seats: 0 }));
+    for (const { alpha, block: blk } of rowSeats) {
       const pos: Vec3 = [r * Math.sin(alpha), s.focusY - r * Math.cos(alpha), z];
       const facing: Vec3 = [-Math.sin(alpha), Math.cos(alpha), 0];
       const right: Vec3 = [facing[1], -facing[0], 0];
@@ -136,6 +139,9 @@ export function generateSeating(c: VenueConfiguration): SeatingResult {
       number++;
       minAlpha = Math.min(minAlpha, alpha);
       maxAlpha = Math.max(maxAlpha, alpha);
+      blockSpan[blk].min = Math.min(blockSpan[blk].min, alpha);
+      blockSpan[blk].max = Math.max(blockSpan[blk].max, alpha);
+      blockSpan[blk].seats++;
       const eye = add(add(pos, scale(facing, product.eyeOffset.value)), [0, 0, product.eyeHeight.value]);
       const id = `seat.${label}.${String(number).padStart(2, '0')}`;
       const frame: Frame = { origin: pos, xAxis: right, yAxis: facing, zAxis: cross(right, facing) };
@@ -150,6 +156,7 @@ export function generateSeating(c: VenueConfiguration): SeatingResult {
         screenClearance: sphereRadiusAt(R, eyeZ) - maxPlan,
         distanceFromOrigin: Math.hypot(...eye),
         accessible: false,
+        block: blk,
       };
       seats.push(rec);
       objects.push({
@@ -158,11 +165,12 @@ export function generateSeating(c: VenueConfiguration): SeatingResult {
         layer: '02_AUDIENCE/Seats',
         category: 'Seat',
         geometry: { kind: 'blockInstance', blockId: block.id, frame },
-        parentAssembly: `tier.${label}`,
+        parentAssembly: telescopic ? wagonId(label, blk) : `tier.${label}`,
         operatingState: 'seated',
         metadata: {
           row: label,
           seat_number: number,
+          block: blk,
           product_id: product.id,
           manufacturer: product.manufacturer,
           model: product.model,
@@ -183,9 +191,52 @@ export function generateSeating(c: VenueConfiguration): SeatingResult {
       });
     }
 
-    // Tier platform under the seats actually generated in this row (row A sits on the main floor).
-    if (i > 0 && number > 0) {
-      const margin = (w / 2 + 0.3) / r;
+    const margin = (w / 2 + 0.3) / r;
+    if (telescopic) {
+      // Telescopic wagons: one per row block, an open deck (the rows in front slide underneath) plus a
+      // back riser up to the next deck. Decks of neighbouring blocks meet on the aisle centre line.
+      const deckT = c.transformation.deckThickness;
+      const nextDeckBottom = floor + (i + 1) * s.riserHeight - deckT;
+      blockSpan.forEach((span, b) => {
+        if (!span.seats) return;
+        const a0 = b === 0 ? span.min - margin : aisleAngles[b - 1];
+        const a1 = b === bounds.length - 1 ? span.max + margin : aisleAngles[b];
+        const sector = (inner: number, outer: number, zBottom: number, zTop: number): Geometry => ({
+          kind: 'annularSector',
+          center: [0, s.focusY],
+          innerRadius: inner,
+          outerRadius: outer,
+          angle0: a0,
+          angle1: a1,
+          zBottom,
+          zTop,
+        });
+        const meta = { row: label, block: b, riser_m: s.riserHeight, tier_top_z: +z.toFixed(4), row_pitch_m: s.rowPitch, seats: span.seats };
+        if (i > 0)
+          objects.push({
+            id: `tier.${label}.b${b}`,
+            name: `Wagon_Deck_${label}_${b}`,
+            layer: '02_AUDIENCE/Seating_Tiers',
+            category: 'SeatingTier',
+            geometry: sector(r - s.rowPitch / 2, r + s.rowPitch / 2, z - deckT, z),
+            parentAssembly: wagonId(label, b),
+            operatingState: 'all',
+            metadata: { ...meta, tier_bottom_z: +(z - deckT).toFixed(4), construction: 'telescopic wagon deck (conceptual)' },
+          });
+        if (i < s.rowCount - 1 && nextDeckBottom > z + 1e-6)
+          objects.push({
+            id: `riser.${label}.b${b}`,
+            name: `Wagon_Riser_${label}_${b}`,
+            layer: '02_AUDIENCE/Seating_Tiers',
+            category: 'SeatingRiser',
+            geometry: sector(r + s.rowPitch / 2 - 0.03, r + s.rowPitch / 2, z, nextDeckBottom),
+            parentAssembly: wagonId(label, b),
+            operatingState: 'all',
+            metadata: { row: label, block: b, construction: 'telescopic wagon back riser (conceptual)' },
+          });
+      });
+    } else if (i > 0 && number > 0) {
+      // Fixed tier platform under the seats actually generated in this row (row A sits on the main floor).
       objects.push({
         id: `tier.${label}`,
         name: `Tier_${label}`,
@@ -202,7 +253,7 @@ export function generateSeating(c: VenueConfiguration): SeatingResult {
           zTop: z,
         },
         operatingState: 'seated',
-        metadata: { row: label, riser_m: s.riserHeight, tier_top_z: +z.toFixed(4), row_pitch_m: s.rowPitch, seats: number },
+        metadata: { row: label, riser_m: s.riserHeight, tier_top_z: +z.toFixed(4), tier_bottom_z: +floor.toFixed(4), row_pitch_m: s.rowPitch, seats: number },
       });
     }
   }
