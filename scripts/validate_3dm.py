@@ -159,6 +159,55 @@ def main(path):
     outside = [o.Attributes.Name for o in top if any(abs(x) > half + 1e-6 or abs(y) > half + 1e-6 for x, y, _ in exact_points(o.Geometry))]
     rep.check(not outside, f"all objects inside the {2*half:.1f} m design envelope (plan, exact vertices)", ", ".join(outside[:5]))
 
+    led = manifest.get("led")
+    if led:
+        print("\nLED system")
+        units = [o for o in top if (o.Attributes.GetUserString("om.category") or "").startswith("LED")]
+        rep.check(len(units) == led["count"], f"{led['count']} LED units", f"found {len(units)}")
+        rep.check(all(o.Attributes.GetUserString("om.deviation_mm") is not None and o.Attributes.GetUserString("om.curvature_ok") for o in units), "every unit carries deviation, joint and curvature metadata")
+        if led["strategy"] == "rings":
+            refs = [o.Geometry for o in units if isinstance(o.Geometry, r.InstanceReference)]
+            rep.check(len(refs) == len(units), "units are block instances")
+            def rigid(x):
+                cols = [(x.M00, x.M10, x.M20), (x.M01, x.M11, x.M21), (x.M02, x.M12, x.M22)]
+                ortho = all(abs(sum(a * b for a, b in zip(cols[i], cols[j])) - (1 if i == j else 0)) < 1e-9 for i in range(3) for j in range(3))
+                det = (cols[0][0] * (cols[1][1] * cols[2][2] - cols[1][2] * cols[2][1]) - cols[1][0] * (cols[0][1] * cols[2][2] - cols[0][2] * cols[2][1]) + cols[2][0] * (cols[0][1] * cols[1][2] - cols[0][2] * cols[1][1]))
+                return ortho and abs(det - 1) < 1e-9
+            rep.check(all(rigid(g.Xform) for g in refs), "no unit is scaled or skewed (rigid transforms, true size)")
+            d = model.InstanceDefinitions.FindId(refs[0].ParentIdefId) if refs else None
+            if d is not None:
+                parts = [model.Objects.FindId(i).Geometry for i in d.GetObjectIds()]
+                lo = [min(bbox(g)[0][k] for g in parts) for k in range(3)]
+                hi = [max(bbox(g)[1][k] for g in parts) for k in range(3)]
+                u = led["unit"]
+                rep.check(abs(hi[0] - lo[0] - u["w"]) < 1e-9 and abs(hi[1] - lo[1] - u["h"]) < 1e-9 and abs(hi[2] - lo[2] - u["d"]) < 1e-9,
+                          "unit block matches the product's true size", f"{(hi[0]-lo[0])*1000:.1f} × {(hi[1]-lo[1])*1000:.1f} × {(hi[2]-lo[2])*1000:.1f} mm")
+            # Every front-face corner within the reported deviation of the sphere.
+            worst = 0.0
+            for g in refs:
+                x = g.Xform
+                for sx in (-1, 1):
+                    for sy in (-1, 1):
+                        lx, ly = sx * led["unit"]["w"] / 2, sy * led["unit"]["h"] / 2
+                        p = (x.M00 * lx + x.M01 * ly + x.M03, x.M10 * lx + x.M11 * ly + x.M13, x.M20 * lx + x.M21 * ly + x.M23)
+                        worst = max(worst, abs(math.dist(p, (0, 0, 0)) - R))
+            rep.check(abs(worst - led["maxDeviation"]) < 1e-6, "face corners deviate from the sphere by the reported maximum", f"{worst*1000:.2f} mm")
+        else:
+            worst = 0.0
+            for o in units:
+                srf = o.Geometry.Faces[0].UnderlyingSurface() if isinstance(o.Geometry, r.Brep) else None
+                if srf is None:
+                    worst = float("inf")
+                    break
+                du, dv = srf.Domain(0), srf.Domain(1)
+                for i in range(3):
+                    for j in range(3):
+                        p = srf.PointAt(du.T0 + (du.T1 - du.T0) * i / 2, dv.T0 + (dv.T1 - dv.T0) * j / 2)
+                        worst = max(worst, abs(math.dist((p.X, p.Y, p.Z), (0, 0, 0)) - R))
+            rep.check(worst < 1e-9 * R, "every tile is an exact sphere patch", f"max |r - R| = {worst:.2e} m")
+            types = {o.Attributes.GetUserString("om.tile_type") for o in units}
+            rep.check(len(types) == led["unitTypes"], f"{led['unitTypes']} tile types", f"found {len(types)}")
+
     imm = manifest.get("immersion")
     if imm:
         print("\nImmersion analysis")

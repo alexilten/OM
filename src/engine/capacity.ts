@@ -70,7 +70,10 @@ export function fitCapacity(base: VenueConfiguration, target: number, settings: 
   let best = candidates[0];
   let bestScore = -1;
   for (const cand of candidates) {
-    const score = analyzeImmersion(generateVenue(cand.config), settings, 6).average;
+    // Seats and scores do not depend on the LED system, so skip panelizing it for each candidate.
+    const probe = cloneConfig(cand.config);
+    probe.led.enabled = false;
+    const score = analyzeImmersion(generateVenue(probe), settings, 6).average;
     if (score > bestScore) {
       bestScore = score;
       best = cand;

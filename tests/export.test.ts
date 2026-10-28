@@ -85,4 +85,25 @@ describe('Rhino export', () => {
     expect(scored).toBe(model.seats.length);
     expect(manifest.immersion?.premiumCount).toBe(analysis.premiumCount);
   });
+
+  it('writes spherical LED tiles as exact sphere patches', () => {
+    const c = JSON.parse(JSON.stringify(OM_300_FLAGSHIP));
+    c.led.productId = 'om-custom-modular-sphere';
+    c.led.extent = 'band';
+    const model = generateVenue(c);
+    const { bytes, manifest } = exportRhino(rh, model);
+    const doc = rh.File3dm.fromByteArray(bytes);
+    let tiles = 0;
+    for (let i = 0; i < doc.objects().count; i++) {
+      const o = doc.objects().get(i);
+      if (o.attributes().getUserString('om.category') !== 'LEDTile') continue;
+      tiles++;
+      const srf = (o.geometry() as InstanceType<Rhino['Brep']>).surfaces().get(0);
+      const [u0, u1] = srf.domain(0);
+      const [v0, v1] = srf.domain(1);
+      const p = srf.pointAt((u0 + u1) / 2, (v0 + v1) / 2);
+      expect(Math.hypot(p[0], p[1], p[2])).toBeCloseTo(c.sphere.radius, 9);
+    }
+    expect(tiles).toBe(manifest.led!.count);
+  });
 });

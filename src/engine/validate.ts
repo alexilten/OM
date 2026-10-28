@@ -37,8 +37,9 @@ export function validateConfig(c: VenueConfiguration): Issue[] {
     ['stage.centerY', c.stage.centerY],
     ['envelope.serviceZone', c.envelope.serviceZone],
     ['envelope.overheadClearance', c.envelope.overheadClearance],
-    ['ledPreview.bandElevationDeg', c.ledPreview.bandElevationDeg],
-    ['ledPreview.bandRows', c.ledPreview.bandRows],
+    ['led.bandElevationDeg', c.led.bandElevationDeg],
+    ['led.bandRows', c.led.bandRows],
+    ['led.jointGap', c.led.jointGap],
   ];
   for (const [path, v] of numbers) if (!finite(v)) err(path, 'not-a-number', `${path} must be a finite number.`);
   if (issues.length) return issues;
@@ -81,10 +82,12 @@ export function validateConfig(c: VenueConfiguration): Issue[] {
   if (c.stage.width <= 0 || c.stage.depth <= 0 || c.stage.height < 0) err('stage.width', 'stage-size', 'Stage dimensions must be positive.');
   if (c.envelope.serviceZone < 0 || c.envelope.overheadClearance < 0) err('envelope.serviceZone', 'envelope', 'Envelope clearances cannot be negative.');
 
-  if (c.ledPreview.enabled) {
-    if (!getLedProduct(c.ledPreview.productId)) err('ledPreview.productId', 'unknown-led', `Unknown LED product "${c.ledPreview.productId}".`);
-    if (!isInt(c.ledPreview.bandRows) || c.ledPreview.bandRows < 1 || c.ledPreview.bandRows > 40)
-      err('ledPreview.bandRows', 'led-rows', 'LED preview rows must be a whole number from 1 to 40.');
+  if (c.led.enabled) {
+    if (!getLedProduct(c.led.productId)) err('led.productId', 'unknown-led', `Unknown LED product "${c.led.productId}".`);
+    if (c.led.extent !== 'full' && c.led.extent !== 'band') err('led.extent', 'led-extent', 'LED extent must be "full" or "band".');
+    if (c.led.placement !== 'tangent' && c.led.placement !== 'balanced') err('led.placement', 'led-placement', 'LED placement must be "tangent" or "balanced".');
+    if (!isInt(c.led.bandRows) || c.led.bandRows < 1 || c.led.bandRows > 40) err('led.bandRows', 'led-rows', 'LED band rows must be a whole number from 1 to 40.');
+    if (c.led.jointGap < 0 || c.led.jointGap > 0.02) err('led.jointGap', 'led-gap', 'LED joint gap must be between 0 and 20 mm.');
   }
 
   if (c.analysis) {

@@ -1,12 +1,12 @@
 import { useState } from 'react';
 import { M_PER_FT } from '../engine/units';
-import { LED_PRODUCTS } from '../library/led';
 import { SEATING_PRODUCTS } from '../library/seating';
 import type { StageType } from '../engine/types';
 import { NumberInput, ParamField, Section, Segmented, Toggle, type FieldSpec } from './ui/ParamField';
 import { useStudio } from './store';
 import { IssueList } from './IssueList';
 import { AnalysisSection, CapacityTarget } from './AnalysisPanel';
+import { LedSection } from './LedPanel';
 
 const F = (path: string, label: string, kind: FieldSpec['kind'], min: number, max: number, step: number, tip: string): FieldSpec => ({ path, label, kind, min, max, step, tip });
 
@@ -40,10 +40,6 @@ const STAGE: FieldSpec[] = [
 const ENVELOPE: FieldSpec[] = [
   F('envelope.serviceZone', 'Service zone', 'length', 0, 5, 0.1, 'Plan zone behind the media surface for structure, LED service access and MEP.'),
   F('envelope.overheadClearance', 'Overhead clearance', 'length', 0, 6, 0.1, 'Clearance above the top of the media surface for rigging and structure.'),
-];
-const LED: FieldSpec[] = [
-  F('ledPreview.bandElevationDeg', 'Band elevation', 'angle', -20, 60, 0.5, 'Centre latitude of the preview band of cabinets.'),
-  F('ledPreview.bandRows', 'Band rows', 'count', 1, 20, 1, 'Cabinet rows in the preview band.'),
 ];
 
 function SphereSize() {
@@ -204,19 +200,8 @@ export function ParameterPanel() {
           <ParamField key={f.path} spec={f} />
         ))}
       </Section>
-      <Section title="LED preview band" defaultOpen={false}>
-        <Toggle checked={config.ledPreview.enabled} label="Generate preview cabinets" onChange={(v) => setParam('ledPreview.enabled', v)} />
-        <select value={config.ledPreview.productId} onChange={(e) => setParam('ledPreview.productId', e.target.value)}>
-          {LED_PRODUCTS.map((p) => (
-            <option key={p.id} value={p.id}>
-              {p.family.slice(0, 2)} · {p.manufacturer} {p.model}
-            </option>
-          ))}
-        </select>
-        {LED.map((f) => (
-          <ParamField key={f.path} spec={f} />
-        ))}
-        <p className="hint">Round 01 preview: flat cabinets tangent to the sphere. Full panelization arrives in Round 03. Turn on the LED_Cabinets layer to see them.</p>
+      <Section title="LED system" defaultOpen={false}>
+        <LedSection />
       </Section>
       <Section title="Design envelope" defaultOpen={false}>
         {ENVELOPE.map((f) => (

@@ -1,5 +1,6 @@
 import { GradeLegend } from './AnalysisPanel';
 import { LayerPanel } from './LayerPanel';
+import { LedLegend } from './LedPanel';
 import { MetricsPanel } from './MetricsPanel';
 import { ParameterPanel } from './ParameterPanel';
 import { SelectionPanel } from './SelectionPanel';
@@ -17,11 +18,22 @@ const VIEWS: { name: ViewName; label: string; title: string }[] = [
 
 function HeatLegend() {
   const heatmap = useStudio((s) => s.heatmap);
-  if (!heatmap) return null;
+  const ledColor = useStudio((s) => s.ledColor);
+  if (!heatmap && ledColor === 'product') return null;
   return (
     <div className="heat-legend">
-      <div className="row-label">Immersion score by seat</div>
-      <GradeLegend />
+      {heatmap && (
+        <>
+          <div className="row-label">Immersion score by seat</div>
+          <GradeLegend />
+        </>
+      )}
+      {ledColor !== 'product' && (
+        <>
+          <div className="row-label">{ledColor === 'deviation' ? 'LED deviation from the ideal sphere' : 'LED joints (widest gap or step)'}</div>
+          <LedLegend />
+        </>
+      )}
     </div>
   );
 }

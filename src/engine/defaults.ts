@@ -31,10 +31,23 @@ export const OM_300_FLAGSHIP: VenueConfiguration = {
   },
   stage: { type: 'cinematic', width: 9, depth: 3.2, height: 0.9, centerY: 9.0 },
   envelope: { serviceZone: 1.5, overheadClearance: 2.0 },
-  ledPreview: { enabled: true, productId: 'roe-ruby-c-rbc2.6f', bandElevationDeg: 10, bandRows: 3 },
+  led: { enabled: true, productId: 'roe-ruby-c-rbc2.6f', extent: 'full', bandElevationDeg: 10, bandRows: 3, placement: 'tangent', jointGap: 0 },
   analysis: DEFAULT_ANALYSIS,
 };
 
 export function cloneConfig(c: VenueConfiguration): VenueConfiguration {
   return JSON.parse(JSON.stringify(c)) as VenueConfiguration;
+}
+
+/**
+ * Brings a saved configuration up to the current shape. Round 01–02 files carry `ledPreview`
+ * (a band of rows); it becomes `led` with the band extent so the file regenerates as it was saved.
+ */
+export function normalizeConfig(raw: VenueConfiguration & { ledPreview?: { enabled: boolean; productId: string; bandElevationDeg: number; bandRows: number } }): VenueConfiguration {
+  const { ledPreview, ...rest } = cloneConfig(raw) as typeof raw;
+  const c = rest as VenueConfiguration;
+  if (!c.led && ledPreview) c.led = { ...ledPreview, extent: 'band', placement: 'tangent', jointGap: 0 };
+  c.led ??= cloneConfig(OM_300_FLAGSHIP).led;
+  c.analysis ??= cloneConfig(OM_300_FLAGSHIP).analysis;
+  return c;
 }
