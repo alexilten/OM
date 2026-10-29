@@ -167,8 +167,36 @@ def main(path):
     lo, hi = bbox(by_id["stage.main"].Geometry)
     stage_dz = pose_dz(by_id["stage.main"])
     stage_top = hi[2]
-    rep.check(abs((hi[0] - lo[0]) - st["width"]) < TOL and abs((hi[1] - lo[1]) - st["depth"]) < TOL and abs((hi[2] - lo[2]) - st["height"]) < TOL,
-              "stage dimensions match configuration", f"{hi[0]-lo[0]:.3f} × {hi[1]-lo[1]:.3f} × {hi[2]-lo[2]:.3f} m")
+    stage_obj = by_id["stage.main"]
+    joined = stage_obj.Attributes.GetUserString("om.joined_to_screen") == "yes"
+    if not joined:
+        rep.check(abs((hi[0] - lo[0]) - st["width"]) < TOL and abs((hi[1] - lo[1]) - st["depth"]) < TOL and abs((hi[2] - lo[2]) - st["height"]) < TOL,
+                  "stage dimensions match configuration", f"{hi[0]-lo[0]:.3f} × {hi[1]-lo[1]:.3f} × {hi[2]-lo[2]:.3f} m")
+    else:
+        # A deck joined to the screen: measure its edges (bounding boxes of arcs are loose), then check the
+        # trimmed edge is an exact arc of the screen's plan circle less the joint gap.
+        brep = stage_obj.Geometry.ToBrep(True)
+        pts = []
+        for e in range(len(brep.Edges)):
+            crv = brep.Edges[e]
+            d0, d1 = crv.Domain.T0, crv.Domain.T1
+            pts += [crv.PointAt(d0 + (d1 - d0) * k / 512) for k in range(513)]
+        xs = [p.X for p in pts]
+        ys = [p.Y for p in pts]
+        zs = [p.Z for p in pts]
+        w, d, h = max(xs) - min(xs), max(ys) - min(ys), max(zs) - min(zs)
+        want_w = float(stage_obj.Attributes.GetUserString("om.plan_width_m"))
+        want_d = float(stage_obj.Attributes.GetUserString("om.plan_depth_m"))
+        rep.check(abs(w - want_w) < 1e-4 and abs(d - want_d) < 1e-4 and abs(h - st["height"]) < TOL,
+                  "stage dimensions match configuration (deck joined to the screen)", f"{w:.3f} × {d:.3f} × {h:.3f} m")
+        trim = float(stage_obj.Attributes.GetUserString("om.trim_radius_m"))
+        far = max(math.hypot(p.X, p.Y) for p in pts)
+        deck_top_z = max(zs) - stage_dz
+        R0 = config["sphere"]["radius"]
+        ring0 = config["sphere"].get("ringRadius", 0) or 0
+        screen_r = ring0 + math.sqrt(max(0.0, R0 * R0 - deck_top_z * deck_top_z))
+        rep.check(abs(far - trim) < 1e-6 and screen_r - trim >= 0.05 - 1e-6, "stage deck meets the screen on an exact arc, inside it",
+                  f"edge radius {far:.4f} m, screen {screen_r:.4f} m at deck level")
     floor = config["floor"]["mainFloorElevation"]
     rep.check(abs(lo[2] - stage_dz - floor) < TOL, "stage sits on the main floor" + (" (before lowering)" if stage_dz else ""), f"z = {lo[2] - stage_dz:.4f}")
     tiers = [o for o in top if o.Attributes.GetUserString("om.category") == "SeatingTier"]

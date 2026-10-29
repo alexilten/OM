@@ -5,6 +5,7 @@
  */
 import { getSeatingProduct } from '../library/seating';
 import { architectureMetrics, architectureObjects, stageObjects } from './architecture';
+import { stageFootprint } from './stage';
 import { generateBuilding } from './building';
 import { LAYERS } from './layers';
 import { generateTransformation, translateGeometry } from './kinetics';
@@ -91,7 +92,7 @@ export function generateVenue(config: VenueConfiguration): VenueModel {
     {
       key: 'aud.standing',
       label: 'Standing capacity (concept, not occupancy)',
-      value: kin.model ? kin.model.standing.capacity : Math.floor((Math.PI * Math.max(0, floorRadius - config.seating.screenClearance) ** 2 - config.stage.width * config.stage.depth) / 0.5),
+      value: kin.model ? kin.model.standing.capacity : Math.floor((Math.PI * Math.max(0, floorRadius - config.seating.screenClearance) ** 2 - stageFootprint(config).area) / 0.5),
       unit: 'count',
       quality: 'conceptual',
       group: 'Audience',

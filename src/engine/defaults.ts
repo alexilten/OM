@@ -14,7 +14,7 @@ export const OM_300_FLAGSHIP: VenueConfiguration = {
     azimuthLeftDeg: -110,
     azimuthRightDeg: 110,
     elevationLowerDeg: -7.5,
-    elevationUpperDeg: 72,
+    elevationUpperDeg: 54,
   },
   floor: { mainFloorElevation: -1.8, slabThickness: 0.3 },
   seating: {
@@ -29,7 +29,7 @@ export const OM_300_FLAGSHIP: VenueConfiguration = {
     aisleWidth: 1.2,
     screenClearance: 1.5,
   },
-  stage: { type: 'cinematic', width: 9, depth: 3.2, height: 0.9, centerY: 9.0 },
+  stage: { type: 'cinematic', width: 9, depth: 3.2, height: 0.9, centerY: 9.0, attached: true, backReach: 1, sideReach: 1 },
   envelope: { serviceZone: 1.5, overheadClearance: 2.0 },
   transformation: {
     enabled: true,
@@ -57,7 +57,7 @@ export const OM_300_FLAGSHIP: VenueConfiguration = {
   },
   fitout: { riserDeck: 'deck-acoustic', guardrail: 'rail-glass', seatAccessory: 'acc-side-table' },
   systems: {
-    lighting: { enabled: true, tier: 'premium', scale: 1 },
+    lighting: { enabled: true, tier: 'premium', scale: 1, crownDropDeg: 0 },
     audio: { enabled: true, tier: 'premium', scale: 1, product: 'holoplot-x1' },
     haptics: { enabled: true, tier: 'premium', scale: 1 },
     atmospherics: { enabled: true, tier: 'standard', scale: 1 },
@@ -101,6 +101,11 @@ export function normalizeConfig(raw: VenueConfiguration & { ledPreview?: { enabl
     for (const s of Object.values(systems)) s.enabled = false;
     c.systems = systems;
   }
+  c.systems.lighting.crownDropDeg ??= 0;
+  // Files from before the joined stage keep their stand-alone rectangle.
+  c.stage.attached ??= false;
+  c.stage.backReach ??= 1;
+  c.stage.sideReach ??= 1;
   c.structure ??= { ...cloneConfig(OM_300_FLAGSHIP).structure, enabled: false };
   return c;
 }

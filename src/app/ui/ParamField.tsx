@@ -78,6 +78,7 @@ export function ParamField({ spec, mirror }: { spec: FieldSpec; mirror?: string 
         step={step}
         value={Math.min(show(max), Math.max(show(min), show(value)))}
         onChange={(e) => setParam(spec.path, store(Number(e.target.value)))}
+        aria-label={spec.label}
       />
     </div>
   );

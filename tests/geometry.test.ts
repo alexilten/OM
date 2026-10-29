@@ -72,7 +72,7 @@ describe('world origin invariance', () => {
     expect(geom(moved, 'ref.origin', 'point').p).toEqual([0, 0, 0]);
     expect(geom(moved, 'media.ideal', 'spherePatch').radius).toBe(geom(base, 'media.ideal', 'spherePatch').radius);
     // Floor moved: stage and front row follow the floor, the sphere does not.
-    expect(geom(moved, 'stage.main', 'box').min[2]).toBeCloseTo(-2.6);
+    expect(geom(moved, 'stage.main', 'planProfile').zBottom).toBeCloseTo(-2.6);
     expect(moved.seats[0].position[2]).toBeCloseTo(-2.6);
   });
 

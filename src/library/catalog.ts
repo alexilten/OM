@@ -101,11 +101,11 @@ export const SYSTEMS: SystemSpec[] = [
     id: 'lighting',
     label: 'Lighting rigs',
     layer: '05_TECHNICAL/Lighting',
-    description: 'Show lighting kept below the screen line where possible; overhead rigs are scored for how much screen they hide.',
+    description: 'Show lighting kept on the screen edges: a crown ring at the top edge and a wash ring at the base; anything in front of the screen is scored for how much it hides.',
     tiers: {
-      standard: { description: 'Stage truss over the stage plus a floor-level wash ring at the screen base.', units: [WASH, TRUSS, HOIST] },
-      premium: { description: 'Adds moving-head spots on the stage truss and a denser wash ring.', units: [SPOT, WASH, TRUSS, HOIST] },
-      flagship: { description: 'Adds an overhead halo ring of movers and show lasers above the audience.', units: [SPOT, WASH, LASER, TRUSS, HOIST] },
+      standard: { description: 'A circular crown truss of washes set into the top edge of the screen, plus a floor-level wash ring at the screen base.', units: [WASH, TRUSS, HOIST] },
+      premium: { description: 'Adds moving-head spots on the crown ring, aimed at the stage, and a denser wash ring.', units: [SPOT, WASH, TRUSS, HOIST] },
+      flagship: { description: 'Adds show lasers on the crown ring, fanning down over the audience.', units: [SPOT, WASH, LASER, TRUSS, HOIST] },
     },
   },
   {

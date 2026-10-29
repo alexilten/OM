@@ -17,6 +17,7 @@ import { surfacePoint } from '../engine/coordinates';
 import { analysisObjects, seatAnalysisMetadata, type ImmersionAnalysis } from '../engine/immersion';
 import { posedObjects, poseAt } from '../engine/kinetics';
 import { spherePatchNurbs } from '../engine/nurbs';
+import { planBounds } from '../engine/stage';
 import { structureLayout } from '../engine/structure';
 import type { Frame, Geometry, VenueModel, VenueObject } from '../engine/types';
 
@@ -180,6 +181,21 @@ export function toRhinoGeometry(rh: Rhino, g: Geometry): GeometryBase {
       const h = g.zTop - g.zBottom;
       let ex = rh.Extrusion.create(pc, h, true);
       // The extrusion direction follows the profile plane normal; flip if it went downward.
+      if (ex.getBoundingBox(true).max[2] < g.zTop - 1e-6) ex = rh.Extrusion.create(pc, -h, true);
+      return ex;
+    }
+    case 'planProfile': {
+      const z = g.zBottom;
+      const pc = new rh.PolyCurve();
+      for (const sg of g.segments) {
+        if (sg.kind === 'line') pc.appendLine(new rh.Line([sg.a[0], sg.a[1], z], [sg.b[0], sg.b[1], z]));
+        else {
+          const at = (a: number): number[] => [sg.center[0] + sg.radius * Math.cos(a), sg.center[1] + sg.radius * Math.sin(a), z];
+          pc.appendArc(rh.Arc.createFromPoints(at(sg.angle0), at((sg.angle0 + sg.angle1) / 2), at(sg.angle1)));
+        }
+      }
+      const h = g.zTop - g.zBottom;
+      let ex = rh.Extrusion.create(pc, h, true);
       if (ex.getBoundingBox(true).max[2] < g.zTop - 1e-6) ex = rh.Extrusion.create(pc, -h, true);
       return ex;
     }
@@ -384,7 +400,9 @@ export function buildRhinoDocument(rh: Rhino, model: VenueModel, { state = 'seat
               ? o.geometry.frame.origin
               : o.geometry.kind === 'box'
                 ? o.geometry.min
-                : [0, 0, 0],
+                : o.geometry.kind === 'planProfile'
+                  ? [...planBounds(o.geometry.segments).min, o.geometry.zBottom]
+                  : [0, 0, 0],
       })),
   };
 

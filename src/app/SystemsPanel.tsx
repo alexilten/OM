@@ -123,6 +123,15 @@ export function SystemsSection() {
                   <span className="unit">×{s.scale.toFixed(2)}</span>
                 </div>
                 <input type="range" min={0.5} max={2} step={0.05} value={s.scale} onChange={(e) => setParam(`systems.${spec.id}.scale`, Number(e.target.value))} aria-label={`${spec.label} density`} />
+                {spec.id === 'lighting' && (
+                  <>
+                    <div className="field-head">
+                      <label title="The overhead rig is one circular truss set into the slice just above the screen's top edge. It follows the radius and the top edge; this lowers it onto the screen.">Crown ring below top edge</label>
+                      <span className="unit">{(s.crownDropDeg ?? 0).toFixed(0)}°</span>
+                    </div>
+                    <input type="range" min={0} max={20} step={1} value={s.crownDropDeg ?? 0} onChange={(e) => setParam('systems.lighting.crownDropDeg', Number(e.target.value))} aria-label="Crown ring below top edge" />
+                  </>
+                )}
               </>
             )}
           </div>

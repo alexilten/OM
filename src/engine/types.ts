@@ -111,6 +111,16 @@ export interface StageDefinition {
   height: number;
   /** Plan position of the stage centre on the Y axis. */
   centerY: number;
+  /**
+   * Joined to the screen: width × depth becomes the thrust in front, and the deck runs back and out to
+   * the sides until it meets the screen, trimmed to it. Off: a stand-alone rectangle. Ignored for a
+   * central stage.
+   */
+  attached?: boolean;
+  /** How far the deck runs back towards the screen behind the thrust (0 = none, 1 = to the screen). */
+  backReach?: number;
+  /** How far the wings behind the thrust run out to the sides (0 = none, 1 = to the screen). */
+  sideReach?: number;
 }
 
 export interface EnvelopeDefinition {
@@ -260,6 +270,8 @@ export interface SystemSetting {
   scale: number;
   /** Product choice where a system offers several (audio: an id from AUDIO_PRODUCTS). */
   product?: string;
+  /** Lighting only: how far below the screen's top edge the crown ring sits (degrees of elevation, 0–20). */
+  crownDropDeg?: number;
 }
 
 export type SystemId = 'lighting' | 'audio' | 'haptics' | 'atmospherics' | 'tracking';
@@ -409,7 +421,14 @@ export type Geometry =
       zBottom: number;
       zTop: number;
     }
+  /** A closed plan outline of lines and arcs, counter-clockwise, extruded vertically. */
+  | { kind: 'planProfile'; segments: PlanSegment[]; zBottom: number; zTop: number }
   | { kind: 'blockInstance'; blockId: string; frame: Frame };
+
+/** One edge of a plan outline; arc angles are measured from +X towards +Y (counter-clockwise, angle1 > angle0). */
+export type PlanSegment =
+  | { kind: 'line'; a: [number, number]; b: [number, number] }
+  | { kind: 'arc'; center: [number, number]; radius: number; angle0: number; angle1: number };
 
 export type LayerPath = string; // e.g. "02_AUDIENCE/Seats"
 

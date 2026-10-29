@@ -73,8 +73,8 @@ describe('transformation: seated ↔ standing', () => {
   it('lowers the stage flush with the floor and gains standing room', () => {
     const lift = tr.assemblies.find((a) => a.kind === 'stage-lift')!;
     expect(lift.travel).toEqual([0, 0, -m.config.stage.height]);
-    const stage = posedObjects(m.objects, tr, poseAt(tr, tr.duration)).find((o) => o.id === 'stage.main')!.geometry as Extract<Geometry, { kind: 'box' }>;
-    expect(stage.max[2]).toBeCloseTo(m.config.floor.mainFloorElevation, 9);
+    const stage = posedObjects(m.objects, tr, poseAt(tr, tr.duration)).find((o) => o.id === 'stage.main')!.geometry as Extract<Geometry, { kind: 'planProfile' }>;
+    expect(stage.zTop).toBeCloseTo(m.config.floor.mainFloorElevation, 9);
     const fixed = venue((c) => (c.transformation.seating = 'fixed')).transformation!;
     expect(fixed.assemblies.map((a) => a.kind)).toEqual(['stage-lift']);
     expect(tr.standing.capacity).toBeGreaterThan(fixed.standing.capacity);

@@ -11,7 +11,7 @@ import type { Geometry, VenueObject, Vec3 } from '../../engine/types';
 import { ledUnitColor } from '../ledColors';
 import { isLayerVisible, useStudio } from '../store';
 import { HapticGlow, HazeVolume, ScreenSpill, ShowBeams, ShowSurface } from './ShowScene';
-import { annularSectorGeometry, blockGeometry, boxGeometry, calibrationTexture, curvePoints, frameMatrix, sphereGraticule, spherePatchGeometry } from './threeGeometry';
+import { annularSectorGeometry, blockGeometry, planProfileGeometry, boxGeometry, calibrationTexture, curvePoints, frameMatrix, sphereGraticule, spherePatchGeometry } from './threeGeometry';
 
 const COLORS = {
   floor: '#ecebe7',
@@ -335,10 +335,10 @@ export function VenueScene() {
   const solids = useMemo(
     () =>
       model.objects
-        .filter((o) => o.geometry.kind === 'box' || o.geometry.kind === 'annularSector')
+        .filter((o) => o.geometry.kind === 'box' || o.geometry.kind === 'annularSector' || o.geometry.kind === 'planProfile')
         .map((o) => ({
           o,
-          geo: o.geometry.kind === 'box' ? boxGeometry(o.geometry.min, o.geometry.max) : annularSectorGeometry(o.geometry as Extract<Geometry, { kind: 'annularSector' }>),
+          geo: o.geometry.kind === 'box' ? boxGeometry(o.geometry.min, o.geometry.max) : o.geometry.kind === 'planProfile' ? planProfileGeometry(o.geometry) : annularSectorGeometry(o.geometry as Extract<Geometry, { kind: 'annularSector' }>),
           color: o.category === 'Floor' ? COLORS.floor : o.category === 'Stage' ? COLORS.stage : o.category === 'Column' ? COLUMN_COLORS[String(o.metadata.fit_status)] : o.category === 'ServiceWalkway' ? '#9aa3ad' : o.category === 'SafetyVolume' ? '#d73027' : COLORS.tier,
         })),
     [model],

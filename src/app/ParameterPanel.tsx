@@ -40,6 +40,10 @@ const STAGE: FieldSpec[] = [
   F('stage.height', 'Deck height', 'length', 0, 2, 0.05, 'Deck height above the main floor.'),
   F('stage.centerY', 'Centre Y', 'length', -12, 14, 0.1, 'Stage centre position on the forward axis.'),
 ];
+const STAGE_REACH: FieldSpec[] = [
+  F('stage.backReach', 'Back to the screen', 'value', 0, 1, 0.01, 'How far the deck runs back behind the thrust: 0 stops at the thrust, 1 meets the screen.'),
+  F('stage.sideReach', 'Out to the sides', 'value', 0, 1, 0.01, 'How far the wings behind the thrust run out sideways: 0 is the thrust width, 1 meets the screen.'),
+];
 const ENVELOPE: FieldSpec[] = [
   F('envelope.serviceZone', 'Service zone', 'length', 0, 5, 0.1, 'Plan zone behind the media surface for structure, LED service access and MEP.'),
   F('envelope.overheadClearance', 'Overhead clearance', 'length', 0, 6, 0.1, 'Clearance above the top of the media surface for rigging and structure.'),
@@ -269,9 +273,20 @@ export function ParameterPanel() {
           <option value="central">Central platform</option>
           <option value="custom">Custom</option>
         </select>
+        {config.stage.type !== 'central' && (
+          <Toggle checked={!config.stage.attached} label="Stand-alone (not joined to the screen)" onChange={(v) => setParam('stage.attached', !v)} />
+        )}
         {STAGE.map((f) => (
-          <ParamField key={f.path} spec={f} />
+          <ParamField key={f.path} spec={config.stage.attached && config.stage.type !== 'central' ? { ...f, label: f.path === 'stage.width' ? 'Thrust width' : f.path === 'stage.depth' ? 'Thrust depth' : f.label } : f} />
         ))}
+        {config.stage.attached && config.stage.type !== 'central' && (
+          <>
+            <p className="hint small">Joined to the screen: the thrust sits in front, and the deck runs back and out to the sides until it meets the screen, trimmed to it.</p>
+            {STAGE_REACH.map((f) => (
+              <ParamField key={f.path} spec={f} />
+            ))}
+          </>
+        )}
       </Section>
       <Section title="LED system" defaultOpen={false}>
         <LedSection />

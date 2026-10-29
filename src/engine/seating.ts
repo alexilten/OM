@@ -6,6 +6,7 @@
 import { getSeatingProduct } from '../library/seating';
 import { add, cross, scale, toRad } from './coordinates';
 import { ringOf, sphereRadiusAt } from './media';
+import { onStage, stageFootprint } from './stage';
 import type { BlockDefinition, Frame, Geometry, Issue, SeatRecord, SeatingProduct, VenueConfiguration, VenueObject, Vec3 } from './types';
 
 export function rowLabel(i: number): string {
@@ -73,12 +74,8 @@ export function generateSeating(c: VenueConfiguration): SeatingResult {
   const block = seatBlock(product);
   const telescopic = c.transformation.enabled && c.transformation.seating === 'telescopic';
 
-  const stage = c.stage;
+  const stageFp = stageFootprint(c);
   const stageClear = 1.0;
-  const stageMinX = -stage.width / 2 - stageClear;
-  const stageMaxX = stage.width / 2 + stageClear;
-  const stageMinY = stage.centerY - stage.depth / 2 - stageClear;
-  const stageMaxY = stage.centerY + stage.depth / 2 + stageClear;
 
   const objects: VenueObject[] = [];
   const seats: SeatRecord[] = [];
@@ -132,7 +129,7 @@ export function generateSeating(c: VenueConfiguration): SeatingResult {
         dropped.sphere++;
         continue;
       }
-      if (corners.some((p) => p[0] > stageMinX && p[0] < stageMaxX && p[1] > stageMinY && p[1] < stageMaxY)) {
+      if (corners.some((p) => onStage(stageFp, p[0], p[1], stageClear))) {
         dropped.stage++;
         continue;
       }
