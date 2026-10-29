@@ -89,18 +89,20 @@ export const barTime = (bar: number, tempo: { bpm: number; offset: number }) => 
 let n = 0;
 export const cueId = () => `cue-${Date.now().toString(36)}-${(n++).toString(36)}`;
 
-/** Look the preset's drop switches to, so the cue list shows a real crossfade. */
-const DROP_VIDEO: Record<string, string> = { nebula: 'aurora', aurora: 'nebula', ocean: 'cathedral', tunnel: 'nebula', cathedral: 'aurora' };
-
-/** A four-part arc for a show preset: Intro, Build, Drop, Outro over 40 bars. */
+/**
+ * A six-part cinematic arc over 44 bars for a show preset: a near-dark Intro, a long Build, a hard-cut
+ * Drop to the preset's contrast look, a Breakdown back to the home look, a Final hit and a long Outro.
+ */
 export function presetCues(p: ShowPreset): Cue[] {
   const base: ShowLook = { video: p.video, palette: p.palette, lights: 'follow', pulse: 0.6, haze: 0.4, intensity: 1 };
   if (p.id === 'calibration') return [{ id: 'cue-1', name: 'Calibration', bar: 0, fadeBars: 0, look: { ...base, lights: 'palette', pulse: 0, haze: 0.1 } }];
-  const drop = DROP_VIDEO[p.video] ?? p.video;
+  const hit: ShowLook = { ...base, video: p.drop, palette: [...p.palette.slice(1), p.palette[0]], pulse: 1, haze: 0.85, intensity: 1.25 };
   return [
-    { id: 'cue-1', name: 'Intro', bar: 0, fadeBars: 0, look: { ...base, pulse: 0.2, haze: 0.25, intensity: 0.6 } },
-    { id: 'cue-2', name: 'Build', bar: 8, fadeBars: 4, look: { ...base, pulse: 0.5, haze: 0.45, intensity: 0.9 } },
-    { id: 'cue-3', name: 'Drop', bar: 16, fadeBars: 1, look: { ...base, video: drop, palette: [...p.palette.slice(1), p.palette[0]], pulse: 1, haze: 0.75, intensity: 1.15 } },
-    { id: 'cue-4', name: 'Outro', bar: 32, fadeBars: 4, look: { ...base, pulse: 0.15, haze: 0.3, intensity: 0.5 } },
+    { id: 'cue-1', name: 'Intro', bar: 0, fadeBars: 0, look: { ...base, pulse: 0.1, haze: 0.3, intensity: 0.45 } },
+    { id: 'cue-2', name: 'Build', bar: 8, fadeBars: 6, look: { ...base, pulse: 0.55, haze: 0.55, intensity: 0.9 } },
+    { id: 'cue-3', name: 'Drop', bar: 16, fadeBars: 0, look: hit },
+    { id: 'cue-4', name: 'Breakdown', bar: 24, fadeBars: 2, look: { ...base, pulse: 0.25, haze: 0.6, intensity: 0.6 } },
+    { id: 'cue-5', name: 'Final', bar: 28, fadeBars: 0, look: { ...hit, intensity: 1.35 } },
+    { id: 'cue-6', name: 'Outro', bar: 36, fadeBars: 4, look: { ...base, pulse: 0.1, haze: 0.35, intensity: 0.35 } },
   ];
 }

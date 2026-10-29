@@ -117,16 +117,16 @@ export const live = {
 const first = SHOW_PRESETS[0];
 
 /** The panel's look (what the sliders show). */
-export const panelLook = (s: ShowState): ShowLook => ({ video: s.video.kind === 'preset' ? s.video.id : 'nebula', palette: s.palette, lights: s.lights, pulse: s.pulse, haze: s.haze, intensity: s.intensity });
+export const panelLook = (s: ShowState): ShowLook => ({ video: s.video.kind === 'preset' ? s.video.id : 'monolith', palette: s.palette, lights: s.lights, pulse: s.pulse, haze: s.haze, intensity: s.intensity });
 
 export function toDefinition(s: ShowState): ShowDefinition {
   return {
     version: 1,
     presetId: s.presetId,
-    video: s.video.kind === 'preset' ? s.video.id : (s.cues[0]?.look.video ?? 'nebula'),
+    video: s.video.kind === 'preset' ? s.video.id : (s.cues[0]?.look.video ?? 'monolith'),
     ...(s.video.kind === 'file' ? { videoFile: s.video.name } : {}),
     mapping: s.mapping,
-    soundscape: s.audio.kind === 'preset' ? s.audio.id : 'drone',
+    soundscape: s.audio.kind === 'preset' ? s.audio.id : 'leviathan',
     ...(s.audio.kind === 'file' ? { audioFile: s.audio.name } : {}),
     bpm: s.tempo.bpm,
     offset: s.tempo.offset,
@@ -147,7 +147,7 @@ export const useShow = create<ShowState>((set, get) => {
     if (!s.playing) return;
     const a = getAudio();
     if (s.audio.kind === 'file' && buffer) await a.play({ buffer }, from);
-    else await a.play({ soundscape: s.audio.kind === 'preset' ? s.audio.id : 'drone', tempo: s.tempo }, from);
+    else await a.play({ soundscape: s.audio.kind === 'preset' ? s.audio.id : 'leviathan', tempo: s.tempo }, from);
   };
   const syncVideo = (t: number) => {
     if (video && video.duration) video.currentTime = t % video.duration;

@@ -83,8 +83,14 @@ export const DEFAULT_MATRIX: ModRoute[] = [
 
 /** Per-preset matrices; presets not listed use the default. */
 export const PRESET_MATRICES: Record<string, ModRoute[]> = {
-  pulse: [...DEFAULT_MATRIX, r('m6', 'bar', 'lights.strobe', 0.9), r('m7', 'mid', 'screen.speed', 0.5)],
-  ocean: [r('m1', 'bass', 'haze', 0.6, 'sqrt'), r('m2', 'rms', 'screen.brightness', 0.3), r('m3', 'bass', 'haptics', 0.7), r('m4', 'mid', 'lights.sweep', 0.3)],
+  // Weight: the bass moves the room (haze, seats, screen), the bar start hits the lights.
+  monolith: [r('m1', 'bass', 'haze', 0.7, 'sqrt'), r('m2', 'bass', 'haptics', 1, 'squared'), r('m3', 'bass', 'screen.brightness', 0.35, 'squared'), r('m4', 'bar', 'lights.intensity', 0.8, 'squared'), r('m5', 'rms', 'lights.sweep', 0.2)],
+  'event-horizon': [r('m1', 'beat', 'lights.intensity', 0.4), r('m2', 'bass', 'haptics', 0.9, 'squared'), r('m3', 'rms', 'screen.speed', 0.4), r('m4', 'mid', 'screen.brightness', 0.3), r('m5', 'rms', 'haze', 0.4, 'sqrt')],
+  tesseract: [r('m1', 'beat', 'lights.intensity', 0.5), r('m2', 'high', 'lights.sweep', 0.6), r('m3', 'mid', 'screen.speed', 0.5), r('m4', 'bass', 'haptics', 0.8, 'squared')],
+  'machine-heart': [r('m1', 'beat', 'lights.intensity', 0.9, 'squared'), r('m2', 'bar', 'lights.strobe', 0.95), r('m3', 'bass', 'screen.brightness', 0.5, 'squared'), r('m4', 'high', 'screen.speed', 0.7), r('m5', 'bass', 'haptics', 1, 'squared'), r('m6', 'mid', 'lights.sweep', 0.6)],
+  starman: [r('m1', 'beat', 'lights.intensity', 0.8), r('m2', 'bar', 'lights.strobe', 0.8), r('m3', 'high', 'lights.sweep', 0.7), r('m4', 'mid', 'screen.speed', 0.4), r('m5', 'bass', 'haptics', 0.7, 'squared')],
+  'sand-sea': [r('m1', 'bass', 'haze', 0.8, 'sqrt'), r('m2', 'bass', 'haptics', 0.9, 'squared'), r('m3', 'beat', 'lights.intensity', 0.5), r('m4', 'high', 'screen.speed', 0.4)],
+  logogram: [r('m1', 'rms', 'screen.speed', 0.5, 'sqrt'), r('m2', 'bass', 'haptics', 0.8, 'squared'), r('m3', 'rms', 'haze', 0.5, 'sqrt'), r('m4', 'mid', 'lights.intensity', 0.4)],
   calibration: [],
 };
 export const matrixFor = (presetId: string | null) => (presetId && PRESET_MATRICES[presetId] ? PRESET_MATRICES[presetId] : DEFAULT_MATRIX).map((x) => ({ ...x }));

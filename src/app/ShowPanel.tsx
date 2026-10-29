@@ -132,7 +132,7 @@ function MediaMenu() {
           else s.setVideoPreset(e.target.value);
         }}
       >
-        {VIDEO_PRESETS.map((v) => (
+        {VIDEO_PRESETS.filter((v) => !v.legacy || (s.video.kind === 'preset' && v.id === s.video.id)).map((v) => (
           <option key={v.id} value={v.id}>
             {v.label}
           </option>
@@ -194,7 +194,7 @@ function SoundMenu() {
           else s.setSoundscape(e.target.value);
         }}
       >
-        {SOUNDSCAPES.map((a) => (
+        {SOUNDSCAPES.filter((a) => !a.legacy || (s.audio.kind === 'preset' && a.id === s.audio.id)).map((a) => (
           <option key={a.id} value={a.id}>
             {a.label}
           </option>
