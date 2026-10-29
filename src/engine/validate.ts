@@ -120,15 +120,17 @@ export function validateConfig(c: VenueConfiguration): Issue[] {
     if (t.deckThickness <= 0 || t.foldedSeatHeight <= 0) err('transformation.deckThickness', 'kin-deck', 'Deck thickness and folded seat height must be above zero.');
     if (t.wagonSpeed <= 0 || t.stageSpeed <= 0) err('transformation.wagonSpeed', 'kin-speed', 'Machinery speeds must be above zero.');
     if (t.clearanceHoldS < 0 || t.foldS < 0) err('transformation.clearanceHoldS', 'kin-time', 'Hold and fold times cannot be negative.');
-    const p = t.proscenium;
-    if (p?.enabled) {
-      if (![p.widthDeg, p.topDeg, p.travel, p.speed].every(finite)) err('transformation.proscenium.widthDeg', 'prosc-number', 'Proscenium settings must be finite numbers.');
-      else {
-        if (p.widthDeg < 10 || p.widthDeg > 180) err('transformation.proscenium.widthDeg', 'prosc-width', 'Proscenium width must be between 10° and 180° of azimuth.');
-        if (p.topDeg <= c.media.elevationLowerDeg + 1) err('transformation.proscenium.topDeg', 'prosc-top', 'The proscenium top must be at least 1° above the screen\'s lower edge.');
-        if (p.travel < 0 || p.travel > 20) err('transformation.proscenium.travel', 'prosc-travel', 'Proscenium travel must be between 0 and 20 m.');
-        if (p.speed <= 0) err('transformation.proscenium.speed', 'prosc-speed', 'Proscenium speed must be above zero.');
-      }
+  }
+
+  const p = t.proscenium;
+  if (p?.enabled) {
+    if (![p.widthDeg, p.topDeg, p.travel, p.speed].every(finite)) err('transformation.proscenium.widthDeg', 'prosc-number', 'Proscenium settings must be finite numbers.');
+    else {
+      if (p.widthDeg < 10 || p.widthDeg > 180) err('transformation.proscenium.widthDeg', 'prosc-width', 'Proscenium width must be between 10° and 180° of azimuth.');
+      if (p.topDeg <= c.media.elevationLowerDeg + 1) err('transformation.proscenium.topDeg', 'prosc-top', 'The proscenium top must be at least 1° above the screen\'s lower edge.');
+      if (p.travel < 0 || p.travel > 20) err('transformation.proscenium.travel', 'prosc-travel', 'Proscenium travel must be between 0 and 20 m.');
+      if (p.speed <= 0) err('transformation.proscenium.speed', 'prosc-speed', 'Proscenium speed must be above zero.');
+      if (!finite(p.open) || p.open < 0 || p.open > 1) err('transformation.proscenium.open', 'prosc-open', 'Proscenium opening must be between 0 (closed) and 1 (fully open).');
     }
   }
 

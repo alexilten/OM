@@ -78,7 +78,7 @@ def main(path):
 
     def pose(o):
         """Offset of a moved object in the standing state (0, 0, 0 when it has not moved)."""
-        v = o.Attributes.GetUserString("om.pose_offset")
+        v = o.Attributes.GetUserString("om.pose_offset") or o.Attributes.GetUserString("om.carriage_offset_m")
         return tuple(float(x) for x in v.split(",")) if v else (0.0, 0.0, 0.0)
 
     print("\nFile")
@@ -179,8 +179,9 @@ def main(path):
     rep.check(tiers and not bad, f"{len(tiers)} tier platforms/decks span their stated bottom → tier top", ", ".join(bad))
     half = ring + R + config["envelope"]["serviceZone"]
     site = {"BuildingEnvelope", "Column", "Circulation", "SafetyVolume"}  # analysis volumes may extend past the venue
-    # The retracted proscenium carriage leaves the envelope by design (it needs a building pocket).
-    outside = [o.Attributes.Name for o in top if o.Attributes.GetUserString("om.category") not in site and o.Attributes.GetUserString("om.moved_by") != "prosc" and o.Attributes.GetUserString("om.assembly") != "prosc" and any(abs(x) > half + 1e-6 or abs(y) > half + 1e-6 for x, y, _ in exact_points(o.Geometry))]
+    # The opened proscenium carriage leaves the envelope by design (it needs a building pocket).
+    on_carriage = lambda o: (o.Attributes.GetUserString("om.moved_by") or o.Attributes.GetUserString("om.assembly") or "").startswith("prosc") or o.Attributes.GetUserString("om.carriage_offset_m")
+    outside = [o.Attributes.Name for o in top if o.Attributes.GetUserString("om.category") not in site and not on_carriage(o) and any(abs(x) > half + 1e-6 or abs(y) > half + 1e-6 for x, y, _ in exact_points(o.Geometry))]
     rep.check(not outside, f"all objects inside the {2*half:.1f} m design envelope (plan, exact vertices)", ", ".join(outside[:5]))
 
     led = manifest.get("led")
@@ -371,13 +372,15 @@ def main(path):
         wrong = []
         for a in moving:
             g = paths.get(a["id"])
-            if g is None or not isinstance(g.Geometry, r.LineCurve):
+            # The proscenium halves run two straight legs (back, then aside): a two-segment polyline.
+            want = r.PolylineCurve if a["kind"] == "proscenium" else r.LineCurve
+            if g is None or not isinstance(g.Geometry, want):
                 wrong.append(a["id"])
                 continue
             p0, p1 = g.Geometry.PointAtStart, g.Geometry.PointAtEnd
             if math.dist((p1.X - p0.X, p1.Y - p0.Y, p1.Z - p0.Z), a["travel"]) > 1e-6:
                 wrong.append(a["id"])
-        rep.check(not wrong, "every path is a straight line equal to its assembly's travel", ", ".join(wrong[:5]))
+        rep.check(not wrong, "every path is straight legs adding up to its assembly's travel", ", ".join(wrong[:5]))
         rep.check(all("conceptual" in (o.Attributes.GetUserString("om.status") or "") for o in paths.values()), "every path is marked conceptual")
         hold = min((a["start"] for a in moving), default=0)
         rep.check(hold >= config["transformation"]["clearanceHoldS"] - 1e-6, f"nothing moves before the {config['transformation']['clearanceHoldS']} s audience clearance", f"first motion at {hold} s")
@@ -396,13 +399,13 @@ def main(path):
                 rep.check(abs(stage_top - floor) < TOL, "lowered stage is flush with the floor", f"top z = {stage_top:.4f}")
             rep.check(not [o for o in top if (o.Attributes.GetUserString("om.layer") or "").startswith("07_ANALYSIS/Sightline")], "no seated sightlines in the standing state")
 
-    carriage = next((a for a in (kin or {}).get("assemblies", []) if a["kind"] == "proscenium"), None)
-    if carriage:
-        print(f"\nRetractable proscenium ({manifest['state']} state)")
+    pr = config["transformation"].get("proscenium") or {}
+    if pr.get("enabled"):
+        print(f"\nRetractable proscenium ({manifest['state']} state, open {pr['open']})")
         layer_paths = [l.FullPath for l in model.Layers]
         pieces = [o for o in top if layer_paths[o.Attributes.LayerIndex].endswith("::Proscenium")]
-        screen = by_id.get("prosc.screen")
-        rep.check(screen is not None and len(pieces) >= 2, f"moving screen plus {len(pieces) - 1} fixed screen sections")
+        halves = {h: by_id.get(f"prosc.screen.{h}") for h in ("left", "right")}
+        rep.check(all(halves.values()) and len(pieces) >= 3, f"two moving halves plus {len(pieces) - 2} fixed screen sections")
         area = sum(float(o.Attributes.GetUserString("om.area_m2")) for o in pieces)
         ideal = float(by_id["media.ideal"].Attributes.GetUserString("om.area_m2"))
         rep.check(abs(area - ideal) < 0.01, "the sections add up to the whole screen", f"{area:.2f} vs {ideal:.2f} m²")
@@ -416,12 +419,20 @@ def main(path):
                     p = srf.PointAt(du.T0 + (du.T1 - du.T0) * i / 8, dv.T0 + (dv.T1 - dv.T0) * j / 8)
                     worst = max(worst, abs(tube(p.X - d[0], p.Y - d[1], p.Z - d[2]) - R))
         rep.check(worst < 1e-9 * R, "every section is an exact patch of the screen surface (less its offset)", f"max |r - R| = {worst:.2e} m")
-        if screen is not None:
-            want = tuple(carriage["travel"]) if manifest["state"] == "standing" else (0.0, 0.0, 0.0)
-            rep.check(math.dist(pose(screen), want) < 1e-6, "moving screen sits " + ("one travel back along +Y" if manifest["state"] == "standing" else "flush with the screen"), str(pose(screen)))
-        moved_led = [o for o in top if o.Attributes.GetUserString("om.moved_by") == "prosc" and (o.Attributes.GetUserString("om.category") or "").startswith("LED")]
-        if manifest["state"] == "standing":
-            rep.check(len(moved_led) == carriage["members"] - 1, f"{carriage['members'] - 1} LED units ride on the carriage", f"found {len(moved_led)}")
+        # Expected pose from the Open setting: back by travel·min(1, 2u), then aside by slide·max(0, 2u − 1).
+        timeline = config["transformation"]["enabled"] and pr["onTimeline"]
+        u = pr["open"] if (not timeline or manifest["state"] == "standing") else 0.0
+        bad = []
+        for h, o in halves.items():
+            if o is None:
+                continue
+            want = (float(o.Attributes.GetUserString("om.slide_m")) * max(0.0, 2 * u - 1), pr["travel"] * min(1.0, 2 * u), 0.0)
+            if math.dist(pose(o), want) > 1e-6:
+                bad.append(f"{h} at {pose(o)} not {want}")
+            riders = [x for x in top if (x.Attributes.GetUserString("om.category") or "").startswith("LED") and (x.Attributes.GetUserString("om.moved_by") == f"prosc.{h}" or (x.Attributes.GetUserString("om.carriage_offset_m") and math.dist(pose(x), pose(o)) < 1e-9))]
+            if any(math.dist(pose(x), pose(o)) > 1e-6 for x in riders):
+                bad.append(f"{h} LED units off their half")
+        rep.check(not bad, "halves sit where the Open setting puts them (back first, then aside) and their LED units ride with them", "; ".join(bad))
 
     print()
     if rep.failures:

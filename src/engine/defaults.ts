@@ -42,7 +42,7 @@ export const OM_300_FLAGSHIP: VenueConfiguration = {
     stageSpeed: 0.05,
     clearanceHoldS: 60,
     foldS: 20,
-    proscenium: { enabled: false, widthDeg: 70, topDeg: 30, travel: 4, speed: 0.1 },
+    proscenium: { enabled: false, widthDeg: 70, topDeg: 30, travel: 4, speed: 0.1, open: 1, onTimeline: true },
   },
   building: {
     enabled: true,
@@ -89,6 +89,8 @@ export function normalizeConfig(raw: VenueConfiguration & { ledPreview?: { enabl
   c.led ??= cloneConfig(OM_300_FLAGSHIP).led;
   c.transformation ??= cloneConfig(OM_300_FLAGSHIP).transformation;
   c.transformation.proscenium ??= { ...cloneConfig(OM_300_FLAGSHIP).transformation.proscenium };
+  c.transformation.proscenium.open ??= 1;
+  c.transformation.proscenium.onTimeline ??= true;
   c.analysis ??= cloneConfig(OM_300_FLAGSHIP).analysis;
   c.building ??= { ...cloneConfig(OM_300_FLAGSHIP).building, enabled: false };
   c.sphere.ringRadius ??= 0;

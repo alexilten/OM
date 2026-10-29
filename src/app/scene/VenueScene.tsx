@@ -92,6 +92,13 @@ function useOffsets(tr: TransformationModel | undefined, pose: Pose | null): Off
   }, [tr, pose]);
 }
 
+/** A sphere patch's own offset (a carriage held open) plus where the timeline has moved it. */
+function patchOffset(o: VenueObject, offsetOf: OffsetOf): Vec3 {
+  const g = o.geometry.kind === 'spherePatch' ? o.geometry.offset : undefined;
+  const d = offsetOf(o.id);
+  return [(g?.[0] ?? 0) + (d?.[0] ?? 0), (g?.[1] ?? 0) + (d?.[1] ?? 0), (g?.[2] ?? 0) + (d?.[2] ?? 0)];
+}
+
 function Solid({ o, color, geo, offset, opacity = 1 }: { o: VenueObject; color: string; geo: THREE.BufferGeometry; offset?: Vec3; opacity?: number }) {
   const selected = useStudio((s) => s.selectedId === o.id);
   const onClick = useSelect();
@@ -172,7 +179,7 @@ function LedTiles({ objects, offsetOf }: { objects: VenueObject[]; offsetOf: Off
       const g = o.geometry as Extract<Geometry, { kind: 'spherePatch' }>;
       // 5 mm in front of the ideal surface so the tiles do not z-fight with it.
       const R = g.radius - 0.005;
-      const d = offsetOf(o.id) ?? [0, 0, 0];
+      const d = patchOffset(o, offsetOf);
       const start = pos.length / 3;
       for (let j = 0; j <= TILE_SEG; j++)
         for (let i = 0; i <= TILE_SEG; i++) {
@@ -350,9 +357,9 @@ export function VenueScene() {
     <group rotation={[-Math.PI / 2, 0, 0]}>
       {shown(model.objects.find((o) => o.id === 'ref.sphere')!) && <ReferenceSphere R={model.config.sphere.radius} ring={ringOf(model.config)} />}
       {show ? (
-        <ShowSurface o={media} pieces={pieces.length ? pieces.map((o) => ({ o, offset: offsetOf(o.id) })) : undefined} />
+        <ShowSurface o={media} pieces={pieces.length ? pieces.map((o) => ({ o, offset: patchOffset(o, offsetOf) })) : undefined} />
       ) : pieces.length ? (
-        pieces.filter(shown).map((o) => <MediaSurface key={o.id} o={o} offset={offsetOf(o.id)} />)
+        pieces.filter(shown).map((o) => <MediaSurface key={o.id} o={o} offset={patchOffset(o, offsetOf)} />)
       ) : (
         shown(media) && <MediaSurface o={media} />
       )}

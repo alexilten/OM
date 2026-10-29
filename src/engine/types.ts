@@ -164,9 +164,9 @@ export interface TransformationDefinition {
 
 /**
  * Retractable proscenium (Round 10). A sector of the media surface centred on the forward axis, from
- * the screen's lower edge up to `topDeg`, is a separate carriage. It is closed (flush with the screen)
- * when seated and slides straight back along +Y by `travel` during the seated → standing sequence,
- * leaving a proscenium opening in the front of the sphere. LED units whose centres fall in the sector
+ * the screen's lower edge up to `topDeg`, is a separate carriage that slides straight back along +Y by
+ * `travel` and then splits and slides apart, leaving a proscenium opening in the front of the sphere.
+ * `open` sets how far; `onTimeline` plays it on the seated → standing sequence. LED units whose centres fall in the sector
  * ride on the carriage.
  */
 export interface ProsceniumDefinition {
@@ -179,6 +179,16 @@ export interface ProsceniumDefinition {
   travel: number;
   /** Carriage speed (m/s). */
   speed: number;
+  /**
+   * How far open, 0–1. The first half of the range pushes the carriage back by `travel`; the second
+   * half splits it at the forward axis and slides each half sideways until the opening is clear.
+   */
+  open: number;
+  /**
+   * On: closed when seated, opening to `open` on the seated → standing timeline (needs the
+   * transformation). Off: held at `open` in every state.
+   */
+  onTimeline: boolean;
 }
 
 /**

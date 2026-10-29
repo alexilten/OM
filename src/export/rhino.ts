@@ -275,7 +275,7 @@ export function buildRhinoDocument(rh: Rhino, model: VenueModel, { state = 'seat
       const d = a && tr.assemblies.find((x) => x.id === a)!.travel;
       if (d && (d[0] || d[1] || d[2])) {
         attrs.setUserString('om.operating_state', 'standing');
-        attrs.setUserString('om.pose_offset', d.map((v) => +v.toFixed(6)).join(','));
+        attrs.setUserString('om.pose_offset', d.join(','));
         attrs.setUserString('om.moved_by', a!);
         if (o.category === 'Seat') attrs.setUserString('om.folded', 'yes');
       }

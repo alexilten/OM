@@ -13,7 +13,7 @@
  * if folded seats + deck fit within the riser, which the collision check verifies rather than assumes.
  */
 import { ringOf, sphereRadiusAt } from './media';
-import { carriageBox, PROSCENIUM_ID, prosceniumSector, ridesCarriage } from './proscenium';
+import { carriageBox, carriageLegs, carriageOf, HALVES, halfId, halfSector, movesOnTimeline, prosceniumSector } from './proscenium';
 import type { Geometry, Issue, Metric, SeatRecord, VenueConfiguration, VenueObject, Vec3 } from './types';
 
 export type AssemblyKind = 'telescopic-wagon' | 'stage-lift' | 'proscenium';
@@ -37,6 +37,11 @@ export interface KineticAssembly {
   block?: number;
   /** Space the assembly occupies while moving, at its seated position. */
   envelope: Envelope;
+  /**
+   * A path in straight legs run one after another (the proscenium: back, then aside). `travel`,
+   * `start` and `duration` then cover the whole path.
+   */
+  legs?: { travel: Vec3; start: number; duration: number }[];
 }
 
 export interface TransitionStep {
@@ -81,9 +86,14 @@ const SAMPLE_S = 1;
 
 export function poseAt(tr: TransformationModel, t: number): Pose {
   const offsets = new Map<string, Vec3>();
+  const at = (start: number, duration: number) => (duration > 0 ? clamp01((t - start) / duration) : t >= start ? 1 : 0);
   for (const a of tr.assemblies) {
-    const k = a.duration > 0 ? clamp01((t - a.start) / a.duration) : t >= a.start ? 1 : 0;
-    offsets.set(a.id, [a.travel[0] * k, a.travel[1] * k, a.travel[2] * k]);
+    const d: Vec3 = [0, 0, 0];
+    for (const leg of a.legs ?? [a]) {
+      const k = at(leg.start, leg.duration);
+      for (let i = 0; i < 3; i++) d[i] += leg.travel[i] * k;
+    }
+    offsets.set(a.id, d);
   }
   return { offsets, fold: tr.fold.duration > 0 ? clamp01((t - tr.fold.start) / tr.fold.duration) : t >= tr.fold.start ? 1 : 0 };
 }
@@ -283,23 +293,32 @@ export function generateTransformation(c: VenueConfiguration, objects: VenueObje
     });
   }
 
-  // The proscenium carriage slides straight back once the house is clear, alongside the seat fold.
+  // The proscenium halves push straight back once the house is clear (alongside the seat fold), then
+  // slide apart.
   const sector = prosceniumSector(c);
   const pr = t.proscenium;
-  if (sector && pr.travel > 0) {
-    const members = objects.filter((o) => o.parentAssembly === PROSCENIUM_ID || ridesCarriage(sector, o)).map((o) => o.id);
-    const box = carriageBox(c, sector);
-    assemblies.push({
-      id: PROSCENIUM_ID,
-      name: 'Proscenium carriage',
-      kind: 'proscenium',
-      memberIds: members,
-      travel: [0, pr.travel, 0],
-      start: t0,
-      duration: pr.travel / pr.speed,
-      envelope: { kind: 'box', min: box.min, max: box.max },
-    });
-  }
+  if (sector && movesOnTimeline(c))
+    for (const h of HALVES) {
+      const { push, slide } = carriageLegs(c, sector, h);
+      if (!push[1] && !slide[0]) continue;
+      const box = carriageBox(c, halfSector(sector, h));
+      const pushS = push[1] / pr.speed;
+      const legs = [
+        { travel: push, start: t0, duration: pushS },
+        { travel: slide, start: t0 + pushS, duration: Math.abs(slide[0]) / pr.speed },
+      ];
+      assemblies.push({
+        id: halfId(h),
+        name: `Proscenium ${h} half`,
+        kind: 'proscenium',
+        memberIds: objects.filter((o) => carriageOf(sector, o) === h).map((o) => o.id),
+        travel: [slide[0], push[1], 0],
+        start: t0,
+        duration: legs[0].duration + legs[1].duration,
+        envelope: { kind: 'box', min: box.min, max: box.max },
+        legs,
+      });
+    }
 
   const memberOf = new Map<string, string>();
   for (const a of assemblies) for (const m of a.memberIds) memberOf.set(m, a.id);
@@ -308,12 +327,14 @@ export function generateTransformation(c: VenueConfiguration, objects: VenueObje
   const longest = wagons.reduce((m, a) => Math.max(m, a.duration), 0);
   const lift = assemblies.find((a) => a.kind === 'stage-lift');
   const prosc = assemblies.find((a) => a.kind === 'proscenium');
+  const proscSlide = prosc?.legs?.[1];
   const steps: TransitionStep[] = [
     { id: 'interlock', label: 'Audience cleared from all moving zones (interlock)', kind: 'interlock', start: 0, duration: t0 },
     ...(telescopic ? [{ id: 'fold', label: 'Seats fold', kind: 'fold' as const, start: t0, duration: t.foldS }] : []),
     ...(longest > 0 ? [{ id: 'move', label: 'Wagons nest under the back rows', kind: 'move' as const, start: moveStart, duration: longest }] : []),
     ...(lift ? [{ id: 'lift', label: 'Stage lowers flush with the floor', kind: 'lift' as const, start: lift.start, duration: lift.duration }] : []),
-    ...(prosc ? [{ id: 'proscenium', label: 'Proscenium screen slides back', kind: 'move' as const, start: prosc.start, duration: prosc.duration }] : []),
+    ...(prosc?.legs?.[0].duration ? [{ id: 'proscenium', label: 'Proscenium screen pushes back', kind: 'move' as const, start: prosc.start, duration: prosc.legs[0].duration }] : []),
+    ...(proscSlide?.duration ? [{ id: 'proscenium-slide', label: 'Proscenium halves slide apart', kind: 'move' as const, start: proscSlide.start, duration: proscSlide.duration }] : []),
   ];
   steps.sort((a, b) => a.start - b.start);
 
@@ -348,12 +369,14 @@ export function generateTransformation(c: VenueConfiguration, objects: VenueObje
       name: `Path_${a.name.replace(/\s+/g, '_')}`,
       layer: '04_TRANSFORMATION/Movement_Envelopes',
       category: 'MotionPath',
-      geometry: { kind: 'line', a: from, b: [from[0] + a.travel[0], from[1] + a.travel[1], from[2] + a.travel[2]] },
+      geometry: a.legs
+        ? { kind: 'polyline', points: a.legs.reduce((pts, l) => [...pts, pts[pts.length - 1].map((v, i) => v + l.travel[i]) as Vec3], [from]), closed: false }
+        : { kind: 'line', a: from, b: [from[0] + a.travel[0], from[1] + a.travel[1], from[2] + a.travel[2]] },
       operatingState: 'all',
       metadata: {
         assembly: a.id,
         kind: a.kind,
-        travel_m: +Math.hypot(...a.travel).toFixed(4),
+        travel_m: +(a.legs ? a.legs.reduce((m, l) => m + Math.hypot(...l.travel), 0) : Math.hypot(...a.travel)).toFixed(4),
         start_s: +a.start.toFixed(2),
         duration_s: +a.duration.toFixed(2),
         status: 'conceptual (not engineered)',

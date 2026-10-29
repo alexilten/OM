@@ -132,27 +132,62 @@ describe('retractable proscenium', () => {
   };
   const m = venue(prosc);
   const tr = m.transformation!;
-  const carriage = tr.assemblies.find((a) => a.kind === 'proscenium')!;
+  const halves = tr.assemblies.filter((a) => a.kind === 'proscenium');
+  const patchOf = (objs: typeof m.objects, id: string) => objs.find((o) => o.id === id)!.geometry as Extract<Geometry, { kind: 'spherePatch' }>;
 
-  it('splits the screen into exact fixed sections around a moving section with the same total area', () => {
+  it('splits the screen into exact fixed sections around two moving halves with the same total area', () => {
     const pieces = m.objects.filter((o) => o.layer === '01_MEDIA/Proscenium');
-    expect(pieces.map((o) => o.id).sort()).toEqual(['media.fixed.left', 'media.fixed.right', 'media.fixed.top', 'prosc.screen']);
+    expect(pieces.map((o) => o.id).sort()).toEqual(['media.fixed.left', 'media.fixed.right', 'media.fixed.top', 'prosc.screen.left', 'prosc.screen.right']);
     const total = pieces.reduce((t, o) => t + (o.metadata.area_m2 as number), 0);
     const ideal = m.objects.find((o) => o.id === 'media.ideal')!.metadata.area_m2 as number;
     expect(total).toBeCloseTo(ideal, 2);
   });
 
-  it('slides the screen and the LED units on it straight back along +Y', () => {
-    expect(carriage.travel).toEqual([0, 4, 0]);
-    expect(carriage.memberIds).toContain('prosc.screen');
-    const led = carriage.memberIds.filter((id) => id.startsWith('led.'));
-    expect(led.length).toBeGreaterThan(50);
-    expect(tr.steps.some((s) => s.id === 'proscenium')).toBe(true);
+  it('pushes both halves straight back first, then slides them apart until the opening is clear', () => {
+    expect(halves.map((a) => a.id).sort()).toEqual(['prosc.left', 'prosc.right']);
+    const left = halves.find((a) => a.id === 'prosc.left')!;
+    const right = halves.find((a) => a.id === 'prosc.right')!;
+    expect(left.legs![0].travel).toEqual([0, 4, 0]);
+    expect(left.legs![1].travel[0]).toBeLessThan(0);
+    expect(right.legs![1].travel[0]).toBeGreaterThan(0);
+    expect(left.memberIds).toContain('prosc.screen.left');
+    expect(left.memberIds.filter((id) => id.startsWith('led.')).length).toBeGreaterThan(20);
+    expect(right.memberIds.filter((id) => id.startsWith('led.')).length).toBeGreaterThan(20);
+    expect(tr.steps.map((s) => s.id)).toEqual(expect.arrayContaining(['proscenium', 'proscenium-slide']));
+    // Halfway through the push nothing has moved sideways.
+    const mid = poseAt(tr, left.legs![0].start + left.legs![0].duration / 2).offsets.get('prosc.right')!;
+    expect(mid[0]).toBe(0);
+    expect(mid[1]).toBeCloseTo(2, 9);
     const end = posedObjects(m.objects, tr, poseAt(tr, tr.duration));
-    const screen = end.find((o) => o.id === 'prosc.screen')!.geometry as Extract<Geometry, { kind: 'spherePatch' }>;
-    expect(screen.offset).toEqual([0, 4, 0]);
-    const fixed = end.find((o) => o.id === 'media.fixed.left')!.geometry as Extract<Geometry, { kind: 'spherePatch' }>;
-    expect(fixed.offset).toBeUndefined();
+    expect(patchOf(end, 'prosc.screen.right').offset).toEqual(right.travel);
+    expect(patchOf(end, 'media.fixed.left').offset).toBeUndefined();
+    // Slid clear: the right half's inner edge passes the opening's right edge.
+    const w = m.metrics.find((x) => x.key === 'prosc.width')!.value as number;
+    expect(right.travel[0]).toBeGreaterThan(w / 2);
+  });
+
+  it('the Open slider sets a generative pose: half pushes back only, held in every state when off the timeline', () => {
+    const half = venue((c) => {
+      prosc(c);
+      c.transformation.proscenium.onTimeline = false;
+      c.transformation.proscenium.open = 0.25;
+    });
+    expect(half.transformation!.assemblies.some((a) => a.kind === 'proscenium')).toBe(false);
+    expect(patchOf(half.objects, 'prosc.screen.left').offset).toEqual([0, 2, 0]);
+    const full = venue((c) => {
+      prosc(c);
+      c.transformation.enabled = false;
+      c.transformation.proscenium.open = 1;
+    });
+    const off = patchOf(full.objects, 'prosc.screen.left').offset!;
+    expect(off[1]).toBe(4);
+    expect(off[0]).toBeLessThan(-5);
+    const closed = venue((c) => {
+      prosc(c);
+      c.transformation.proscenium.onTimeline = false;
+      c.transformation.proscenium.open = 0;
+    });
+    expect(patchOf(closed.objects, 'prosc.screen.left').offset).toBeUndefined();
   });
 
   it('frames the opening in the structure: nothing structural is left in the carriage path', () => {
@@ -160,7 +195,8 @@ describe('retractable proscenium', () => {
     expect(header.length).toBeGreaterThan(0);
     const s = prosceniumSector(m.config)!;
     for (const o of header) expect((o.geometry as Extract<Geometry, { kind: 'latitudeArc' }>).elevation).toBeCloseTo(s.el1, 12);
-    const check = checkProscenium(m.config, m.objects, new Set(carriage.memberIds));
+    const members = new Set(halves.flatMap((a) => a.memberIds));
+    const check = checkProscenium(m.config, m.objects, members);
     for (const cat of ['Rib', 'RingGirder', 'BaseRing', 'StructureNode']) expect(check.inPath.has(cat)).toBe(false);
   });
 
@@ -174,16 +210,15 @@ describe('retractable proscenium', () => {
     expect(m.metrics.find((x) => x.key === 'prosc.width')!.value).toBeGreaterThan(10);
   });
 
-  it('needs the transformation and validates its settings', () => {
-    const off = venue((c) => {
-      prosc(c);
-      c.transformation.enabled = false;
-    });
-    expect(off.objects.some((o) => o.id === 'prosc.screen')).toBe(false);
+  it('validates its settings', () => {
     const c = cloneConfig(OM_300_FLAGSHIP);
     prosc(c);
     c.transformation.proscenium.topDeg = c.media.elevationLowerDeg;
     expect(tryGenerateVenue(c).issues.some((i) => i.code === 'prosc-top')).toBe(true);
+    const d = cloneConfig(OM_300_FLAGSHIP);
+    prosc(d);
+    d.transformation.proscenium.open = 1.5;
+    expect(tryGenerateVenue(d).issues.some((i) => i.code === 'prosc-open')).toBe(true);
   });
 
   it('works on the torus too', () => {
@@ -191,8 +226,7 @@ describe('retractable proscenium', () => {
       prosc(c);
       torus(c);
     });
-    const screen = t.objects.find((o) => o.id === 'prosc.screen')!.geometry as Extract<Geometry, { kind: 'spherePatch' }>;
-    expect(screen.ring).toBe(4);
-    expect(t.transformation!.assemblies.some((a) => a.kind === 'proscenium')).toBe(true);
+    expect(patchOf(t.objects, 'prosc.screen.right').ring).toBe(4);
+    expect(t.transformation!.assemblies.filter((a) => a.kind === 'proscenium').length).toBe(2);
   });
 });
