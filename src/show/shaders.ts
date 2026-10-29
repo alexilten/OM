@@ -22,6 +22,8 @@ uniform float uMid;
 uniform float uHigh;
 uniform float uIntensity;
 uniform int uLook;
+uniform int uLook2;
+uniform float uMix;
 uniform int uMode;
 uniform bool uUseVideo;
 uniform sampler2D uVideo;
@@ -46,9 +48,9 @@ vec2 mapUv(float az, float el) {
   return vec2((az - uBounds.x) / (uBounds.y - uBounds.x), (el - uBounds.z) / (uBounds.w - uBounds.z));
 }
 
-vec3 look(vec3 d, float az, float el) {
+vec3 look(int id, vec3 d, float az, float el) {
   float t = uTime;
-  if (uLook == 0) { // Nebula
+  if (id == 0) { // Nebula
     float n = fbm(d * 2.2 + vec3(0.0, t * 0.02, t * 0.01));
     float m = fbm(d * 4.0 - vec3(t * 0.015));
     vec3 c = mix(uPalette0 * 0.15, uPalette1, smoothstep(0.35, 0.8, n));
@@ -56,14 +58,14 @@ vec3 look(vec3 d, float az, float el) {
     float stars = step(0.985, hash(floor(d * 220.0))) * (0.6 + 0.4 * sin(t * 3.0 + hash(floor(d * 220.0)) * 40.0));
     return c * (0.75 + 0.35 * uBeat + 0.3 * uBass) + stars;
   }
-  if (uLook == 1) { // Aurora
+  if (id == 1) { // Aurora
     float curtain = fbm(vec3(az * 3.0, t * 0.08, 0.0));
     float band = smoothstep(0.15, 0.0, abs(el - (0.6 + 0.25 * curtain)));
     float rays = 0.5 + 0.5 * sin(az * 60.0 + curtain * 8.0 + t * 0.6);
     vec3 c = mix(uPalette0, uPalette1, smoothstep(0.4, 1.0, el + curtain * 0.3));
     return c * band * (0.4 + 0.6 * rays) * (1.0 + 0.4 * uBeat) + vec3(0.01, 0.02, 0.05);
   }
-  if (uLook == 2) { // Ocean caustics, seen from below
+  if (id == 2) { // Ocean caustics, seen from below
     vec3 p = d * 3.0 + vec3(0.0, 0.0, t * 0.15);
     float c1 = abs(sin(fbm(p) * 12.0 + t * 0.5));
     float caustic = pow(1.0 - c1, 6.0);
@@ -71,7 +73,7 @@ vec3 look(vec3 d, float az, float el) {
     vec3 c = mix(deep, shallow, smoothstep(-0.2, 1.2, el));
     return c + caustic * vec3(0.6, 0.9, 1.0) * (0.6 + 0.6 * uBass) * smoothstep(-0.1, 0.8, el);
   }
-  if (uLook == 3) { // Tunnel towards the forward direction, zooming on the beat
+  if (id == 3) { // Tunnel towards the forward direction, zooming on the beat
     vec3 f = normalize(vec3(0.0, 1.0, 0.15));
     float ang = acos(clamp(dot(d, f), -1.0, 1.0));
     float rings = fract(log(ang + 0.05) * 4.0 - t * 0.5 - uBeat * 0.35);
@@ -80,7 +82,7 @@ vec3 look(vec3 d, float az, float el) {
     vec3 c = mix(uPalette0, uPalette1, fract(uBar * 0.25 + ang));
     return c * line * (0.5 + 1.2 * uBeat) + uPalette2 * 0.05;
   }
-  if (uLook == 4) { // Cathedral light shafts
+  if (id == 4) { // Cathedral light shafts
     float shafts = pow(0.5 + 0.5 * sin(az * 9.0 + 0.4 * sin(t * 0.07)), 18.0);
     float haze = fbm(d * 3.0 + vec3(t * 0.02));
     vec3 c = mix(vec3(0.05, 0.035, 0.02), uPalette0, shafts * smoothstep(-0.1, 1.2, el));
@@ -102,7 +104,9 @@ void main() {
     vec2 uv = mapUv(az, el);
     c = (uv.x < 0.0 || uv.x > 1.0 || uv.y < 0.0 || uv.y > 1.0) ? vec3(0.0) : texture2D(uVideo, uv).rgb;
   } else {
-    c = look(d, az, el);
+    // Cue crossfade: the outgoing look (uLook2) fades into the incoming one (uLook).
+    c = look(uLook, d, az, el);
+    if (uMix < 0.999) c = mix(look(uLook2, d, az, el), c, uMix);
   }
   gl_FragColor = vec4(c * uIntensity, 1.0);
 }

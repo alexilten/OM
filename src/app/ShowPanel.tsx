@@ -1,5 +1,8 @@
 import { useEffect, useRef, useState } from 'react';
+import { barTime, showLength, type Cue } from '../show/cues';
+import { MOD_CURVES, MOD_SOURCES, MOD_TARGETS, type ModRoute } from '../show/modulation';
 import { SHOW_PRESETS, SOUNDSCAPES, VIDEO_PRESETS } from '../show/presets';
+import { MAX_CLIP_SECONDS, recordingSupported, startRecording, type Recording } from '../show/record';
 import { getAudio, useShow } from '../show/store';
 import { safeSubdivision } from '../show/timing';
 import { useStudio } from './store';
@@ -266,7 +269,53 @@ function Transport() {
         ))}
       </span>
       <span className="bpm">{tempo.bpm.toFixed(0)} BPM</span>
+      <CueName />
+      <RecordButton />
     </div>
+  );
+}
+
+function CueName() {
+  const name = useShow((s) => (s.cuesOn && s.playing ? s.cues[s.cueIndex]?.name : null));
+  return name ? <span className="cue-name">{name}</span> : null;
+}
+
+let recording: Recording | null = null;
+
+/** Records the viewport and the mix (up to 30 s) into a clip to download. */
+function RecordButton() {
+  const on = useShow((s) => s.recording);
+  const clip = useShow((s) => s.clip);
+  if (!recordingSupported()) return null;
+  const toggle = async () => {
+    const s = useShow.getState();
+    if (on) {
+      recording?.stop();
+      return;
+    }
+    const canvas = document.querySelector<HTMLCanvasElement>('.viewport canvas');
+    if (!canvas) return;
+    toShow();
+    if (!s.playing) await s.toggle();
+    s.setRecording(true);
+    recording = startRecording(canvas, getAudio().recordStream(), (blob, ext, seconds) => {
+      recording = null;
+      const name = `${(s.presetId ?? 'om-show').replace(/[^a-z0-9-]+/gi, '-')}-${new Date().toISOString().slice(0, 19).replace(/[:T]/g, '-')}.${ext}`;
+      useShow.getState().setRecording(false);
+      useShow.getState().setClip({ url: URL.createObjectURL(blob), name, seconds });
+    });
+  };
+  return (
+    <>
+      <button className={`rec ${on ? 'active' : ''}`} onClick={() => void toggle()} title={on ? 'Stop recording' : `Record a clip of the viewport with sound (up to ${MAX_CLIP_SECONDS} s)`} aria-label={on ? 'Stop recording' : 'Record clip'}>
+        {on ? '■' : '●'}
+      </button>
+      {clip && !on && (
+        <a className="clip-link" href={clip.url} download={clip.name} title="Download the recorded clip">
+          Clip {clip.seconds.toFixed(0)} s ↓
+        </a>
+      )}
+    </>
   );
 }
 
@@ -317,14 +366,185 @@ export function ShowPanel() {
         <Toggle checked={s.reducedMotion} label="Reduced motion (no beat flashes)" onChange={(reducedMotion) => s.set({ reducedMotion })} />
         <p className="hint small">{sub ? `Beat pulses at ${((s.tempo.bpm / 60) * sub).toFixed(1)} per second, under the 3 flashes per second photosensitivity limit.` : 'The tempo is too fast to pulse safely: beat flashes are off.'}</p>
       </Section>
+      <Section title="Cues">
+        <CueList />
+      </Section>
+      <Section title="Modulation" defaultOpen={false}>
+        <Matrix />
+      </Section>
       <Section title="Watch">
         <button className="primary-wide" onClick={() => seat && viewFromSeat(seat.id)} disabled={!seat}>
           Watch from {seat ? `seat ${seat.row}${seat.number}` : 'a seat'}
         </button>
         <p className="hint small">Select any seat in the viewport to watch from it instead. The preview shows display colour, not calibrated LED brightness.</p>
       </Section>
-      <p className="hint small show-note">Pick the show, media and sound from the top bar. Upload your own video or track there too.</p>
+      <p className="hint small show-note">Pick the show, media and sound from the top bar. Upload your own video or track there too. The show is saved with this alternative.</p>
+      {s.missing && <p className="hint error-note">{s.missing}</p>}
       {s.error && <p className="hint error-note">{s.error}</p>}
     </aside>
   );
 }
+
+const videoLabel = (id: string) => VIDEO_PRESETS.find((v) => v.id === id)?.label ?? id;
+
+function CueRow({ c, active }: { c: Cue; active: boolean }) {
+  const { updateCue, removeCue, captureCue, jumpToCue } = useShow.getState();
+  return (
+    <div className={`cue-row ${active ? 'active' : ''}`}>
+      <input className="cue-title" value={c.name} onChange={(e) => updateCue(c.id, { name: e.target.value })} aria-label="Cue name" />
+      <label title="Start bar">
+        bar
+        <input type="number" min={0} max={999} value={c.bar + 1} onChange={(e) => updateCue(c.id, { bar: Math.max(0, Math.round(Number(e.target.value)) - 1) })} />
+      </label>
+      <label title="Crossfade from the previous cue, in bars">
+        fade
+        <input type="number" min={0} max={32} step={0.5} value={c.fadeBars} onChange={(e) => updateCue(c.id, { fadeBars: Math.max(0, Number(e.target.value)) })} />
+      </label>
+      <div className="cue-look" title={`${videoLabel(c.look.video)} · pulse ${Math.round(c.look.pulse * 100)}% · haze ${Math.round(c.look.haze * 100)}%`}>
+        <span className="swatches">
+          {c.look.palette.slice(0, 3).map((x, k) => (
+            <i key={k} style={{ background: x }} />
+          ))}
+        </span>
+        <span>{videoLabel(c.look.video)}</span>
+      </div>
+      <div className="cue-actions">
+        <button onClick={() => void jumpToCue(c.id)} title="Jump to this cue">
+          ▶
+        </button>
+        <button onClick={() => captureCue(c.id)} title="Store the current look (sliders, palette, look) in this cue">
+          Store
+        </button>
+        <button onClick={() => removeCue(c.id)} title="Delete cue" aria-label="Delete cue">
+          ✕
+        </button>
+      </div>
+    </div>
+  );
+}
+
+function CueList() {
+  const cues = useShow((s) => s.cues);
+  const cuesOn = useShow((s) => s.cuesOn);
+  const cueIndex = useShow((s) => s.cueIndex);
+  const set = useShow((s) => s.set);
+  const addCue = useShow((s) => s.addCue);
+  return (
+    <>
+      <Toggle checked={cuesOn} label="Run the cue list" onChange={(v) => set({ cuesOn: v })} />
+      <div className="cue-list">
+        {cues.map((c, i) => (
+          <CueRow key={c.id} c={c} active={cuesOn && i === cueIndex} />
+        ))}
+      </div>
+      <button className="ghost" onClick={addCue}>
+        Add cue
+      </button>
+      <p className="hint small">
+        {cues.length ? `The list loops every ${showLength(cues)} bars. ` : ''}While cues run, the sliders and the Media menu edit the cue playing now; Store copies the current look into any cue.
+      </p>
+    </>
+  );
+}
+
+function RouteRow({ r }: { r: ModRoute }) {
+  const { updateRoute, removeRoute } = useShow.getState();
+  return (
+    <div className="route-row">
+      <div className="route-line">
+        <select value={r.source} onChange={(e) => updateRoute(r.id, { source: e.target.value as ModRoute['source'] })} aria-label="Source">
+          {MOD_SOURCES.map((x) => (
+            <option key={x.id} value={x.id} title={x.tip}>
+              {x.label}
+            </option>
+          ))}
+        </select>
+        <span className="arrow">→</span>
+        <select value={r.target} onChange={(e) => updateRoute(r.id, { target: e.target.value as ModRoute['target'] })} aria-label="Target">
+          {MOD_TARGETS.map((x) => (
+            <option key={x.id} value={x.id} title={x.tip}>
+              {x.label}
+            </option>
+          ))}
+        </select>
+        <button onClick={() => removeRoute(r.id)} aria-label="Remove route" title="Remove route">
+          ✕
+        </button>
+      </div>
+      <div className="route-line">
+        <input type="range" min={-1} max={1} step={0.05} value={r.amount} onChange={(e) => updateRoute(r.id, { amount: Number(e.target.value) })} aria-label="Amount" />
+        <span className="amount">
+          {r.amount > 0 ? '+' : ''}
+          {Math.round(r.amount * 100)}%
+        </span>
+        <select value={r.curve} onChange={(e) => updateRoute(r.id, { curve: e.target.value as ModRoute['curve'] })} aria-label="Curve">
+          {MOD_CURVES.map((x) => (
+            <option key={x.id} value={x.id}>
+              {x.label}
+            </option>
+          ))}
+        </select>
+      </div>
+    </div>
+  );
+}
+
+function Matrix() {
+  const matrix = useShow((s) => s.matrix);
+  const addRoute = useShow((s) => s.addRoute);
+  return (
+    <>
+      <div className="route-list">
+        {matrix.map((r) => (
+          <RouteRow key={r.id} r={r} />
+        ))}
+      </div>
+      <button className="ghost" onClick={addRoute}>
+        Add route
+      </button>
+      <p className="hint small">Each route sends a source (beat, audio band or screen colour) to a target. Strobe hits stay under 3 per second whatever the routing.</p>
+    </>
+  );
+}
+
+/** Bottom of the viewport in EXPERIENCE: the cues across the loop, with the playhead; click to jump. */
+export function CueRuler() {
+  const cues = useShow((s) => s.cues);
+  const cuesOn = useShow((s) => s.cuesOn);
+  const time = useShow((s) => s.time);
+  const tempo = useShow((s) => s.tempo);
+  const cueIndex = useShow((s) => s.cueIndex);
+  const seek = useShow((s) => s.seek);
+  if (!cuesOn || !cues.length) return null;
+  const len = showLength(cues);
+  const bar = Math.max(0, ((time - tempo.offset) * tempo.bpm) / 240);
+  const loop = Math.floor(bar / len);
+  const head = ((bar % len) / len) * 100;
+  return (
+    <div className="cue-ruler" title="Click to jump">
+      <div
+        className="cue-track"
+        onClick={(e) => {
+          const r = e.currentTarget.getBoundingClientRect();
+          void seek(barTime(loop * len + ((e.clientX - r.left) / r.width) * len, tempo));
+        }}
+      >
+        {cues.map((c, i) => {
+          const end = cues[i + 1]?.bar ?? len;
+          return (
+            <div key={c.id} className={`cue-block ${i === cueIndex ? 'active' : ''}`} style={{ left: `${(c.bar / len) * 100}%`, width: `${((end - c.bar) / len) * 100}%`, background: `linear-gradient(90deg, ${c.look.palette.slice(0, 3).join(', ')})` }}>
+              {c.fadeBars > 0 && <i className="fade" style={{ width: `${(Math.min(c.fadeBars, end - c.bar) / (end - c.bar)) * 100}%` }} />}
+              <span>{c.name}</span>
+            </div>
+          );
+        })}
+        <div className="cue-head" style={{ left: `${head}%` }} />
+      </div>
+      <div className="cue-bars">
+        <span>bar {Math.floor(bar % len) + 1} of {len}</span>
+        <span>{loop > 0 ? `loop ${loop + 1}` : ''}</span>
+      </div>
+    </div>
+  );
+}
+

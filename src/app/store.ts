@@ -9,6 +9,7 @@ import { tryGenerateVenue } from '../engine/model';
 import { DEFAULT_SECTION, type SectionSettings } from '../engine/section';
 import type { Issue, VenueConfiguration, VenueModel } from '../engine/types';
 import type { DisplayUnit } from '../engine/units';
+import type { ShowDefinition } from '../show/definition';
 import { useShow } from '../show/store';
 
 export type ViewName = 'iso' | 'top' | 'front' | 'side' | 'audience' | 'reset';
@@ -86,6 +87,8 @@ interface StudioState {
   addPreset: (size: string, performance: string, name?: string) => void;
   /** Adds an opened configuration as a new alternative. */
   addConfig: (c: VenueConfiguration) => void;
+  /** Saves the live show with the active alternative (no regeneration: the show never changes geometry). */
+  setShow: (show: ShowDefinition) => void;
 }
 
 export function getPath(obj: unknown, path: string): unknown {
@@ -229,6 +232,10 @@ export const useStudio = create<StudioState>((set, get) => {
       const c = buildPreset(size, performance, get().config);
       switchTo(addAlternative(get().project, { ...c, name: name ?? c.name }, get().project.activeId).project);
     },
+    setShow: (show) => {
+      const config = { ...get().config, show };
+      set({ config, project: replaceAlternative(get().project, config) });
+    },
     addConfig: (c) => switchTo(addAlternative(get().project, { ...normalizeConfig(c), analysis: c.analysis ?? DEFAULT_ANALYSIS }).project),
   };
 });
@@ -247,20 +254,6 @@ const scheduleAnalysis = () => {
 };
 useStudio.subscribe((s, prev) => {
   if (s.model !== prev.model) scheduleAnalysis();
-
-// Keep the project in this browser; storage can be unavailable (private windows, previews).
-let saveTimer: ReturnType<typeof setTimeout> | undefined;
-useStudio.subscribe((s, prev) => {
-  if (s.project === prev.project) return;
-  clearTimeout(saveTimer);
-  saveTimer = setTimeout(() => {
-    try {
-      localStorage.setItem(STORAGE_KEY, JSON.stringify(useStudio.getState().project));
-    } catch {
-      // Not persisted; the session still works.
-    }
-  }, 400);
-});
 });
 scheduleAnalysis();
 

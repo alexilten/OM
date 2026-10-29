@@ -98,9 +98,10 @@ Export: `ExportManifest`.
 | **06** Catalog & immersion systems | Standard / Premium / Flagship fit-out (seats, riser decks, guardrails, seat accessories); lighting rigs, immersive audio (HOLOPLOT, d&b Soundscape, L-ISA, generic), haptics, atmospherics and tracking as layers with on/off, tier, density and product | Units placed, counted, costed and exported on their layers; every fixture and speaker has a stable id | **Done** (see §8f) |
 | **07** LED support structure | Generative, productised structure behind the media surface (ribs, ring girders, brackets, splices, shippable segments, schedules, install logistics, service walkway) that carries the audio arrays, lighting truss and hoists | Pick-up schedule includes Round 06 loads; segments respect shipping limits; scales with the media surface | **Done** (see §8g) |
 | **08** Live Show Preview I | EXPERIENCE tab: video upload + shader ambient presets mapped on the sphere, from-seat view, audio upload + synthesised soundscapes, BPM detection / tap tempo, virtual-speaker binaural preview, transport | A/V in sync within one frame over 10 min; BPM within 2 %; 60 fps budget — see `docs/plans/SHOW_PREVIEW_PLAN.md` | **Done** (see §8h) |
-| **09** Live Show Preview II | Content-driven lighting (zone + palette), beams in haze, modulation matrix (beat / bands / colour → video, lights, haze, haptics), show presets, cue list, clip recording, flash-safety limiter | Washes track adjacent screen colour within 100 ms; one-click presets; flash limiter verified | Planned |
-| **10** CAD deliverables | Exact geometry everywhere practical, named blocks, multiple state exports, schedules (CSV), DXF, GLB, PDF sheets | Export validator extended to every state | Planned |
-| **11** Optimisation | Reverse configuration ("250 premium seats", "fit 30 m wide"), immersion-driven layout search, comparison dashboards | Deterministic, explainable proposals | Planned |
+| **09** Live Show Preview II | Content-driven lighting (zone + palette), beams in haze, modulation matrix (beat / bands / colour → video, lights, haze, haptics), show presets, cue list, clip recording, flash-safety limiter | Washes track adjacent screen colour within 100 ms; one-click presets; flash limiter verified | **Done** (see §8i) |
+| **10** Venue forms | Retractable proscenium: a front sector of the screen (azimuth and elevation set by sliders) on its own carrier that slides back along the forward axis to open a stage portal, as a kinetic assembly on the TRANSFORM timeline. Seating anywhere along the forward axis: blocks in front of and behind the origin, with sightlines and immersion scored either side. Torus form: the screen becomes a torus section (major radius, tube radius) with the top cut off by an upper elevation limit, alongside the sphere | Proscenium moves without clashing (screen, structure, stage) and exports both states; seats in front of the origin keep screen clearance and score; torus surface is exact in Rhino and LED, structure and analysis follow it | Planned |
+| **11** CAD deliverables | Exact geometry everywhere practical, named blocks, multiple state exports, schedules (CSV), DXF, GLB, PDF sheets | Export validator extended to every state | Planned |
+| **12** Optimisation | Reverse configuration ("250 premium seats", "fit 30 m wide"), immersion-driven layout search, comparison dashboards | Deterministic, explainable proposals | Planned |
 
 ## 6. Known risks
 
@@ -155,6 +156,9 @@ Export: `ExportManifest`.
 | 2026-10-28 | Public app on GitHub Pages, rebuilt on every push to main | Alex asked for public links (https://alexilten.github.io/OM/) |
 | 2026-10-28 | Venue preset, show, media, sound and playback live in a menu strip under the top bar; notices collapse into one row; left sections start collapsed except Reference sphere; metrics float centred | Alex's Stagework-style layout feedback |
 | 2026-10-28 | Show playback is driven by the audio clock; beat pulses are limited to 3 per second (WCAG 2.3.1) and switch off with reduced motion | One master clock keeps screen, lights and sound locked; photosensitivity safety by default |
+| 2026-10-28 | The show is saved with each alternative as a small versioned `ShowDefinition` (cues, modulation, tempo, look); uploaded files are never stored, only their names | Alternatives can be compared as shows; nothing user-supplied leaves the browser |
+| 2026-10-28 | Cue looks crossfade over bars on the audio clock; the modulation matrix is plain data (source → target × amount × curve); every strobe hit passes a 3-per-second flash guard and beat-flashed saturated red is softened | Musical structure without a timeline editor; safety cannot be routed around |
+| 2026-10-29 | Round 10 becomes Venue forms (retractable proscenium, seating either side of the origin, torus with the top cut off); CAD deliverables move to 11 and optimisation to 12 | Alex's geometry asks change the form itself, so they land before the deliverables are fixed |
 | 2026-10-28 | Standing capacity at 0.5 m² per person on the clear floor of the standing state (0.25 m grid inside the screen clearance) | Conceptual density, to be replaced by the OM team's figure (see §9 question 12) |
 
 ## 8. Round 01 status
@@ -271,6 +275,21 @@ Delivered:
 - Tests: 86 (9 new: BPM 90/120/140 within 1 BPM, downbeat offset, beat phase, tap tempo, flash limit across 40–220 BPM, three mappings, preset references).
 
 Known limits: show settings are not yet saved with alternatives; the binaural preview is a sketch, not an acoustic prediction; brightness is display colour, not calibrated LED nits. Content-driven lighting refinement, cues, modulation and clip recording are Round 09.
+
+## 8i. Round 09 status
+
+Delivered:
+
+- **Cue list**: each show preset gets an arc (Intro, Build, Drop, Outro over 40 bars, looping); every cue stores a look (generated video, palette, lighting mode, pulse, haze, brightness) and crossfades from the previous one over N bars, including a GPU crossfade between two generated looks. Add, rename, move, store the current look, jump to, delete. A cue ruler across the bottom of the viewport shows the loop with the playhead; click to jump.
+- **Modulation matrix** (`src/show/modulation.ts`): routes from beat, bar, bass, mids, highs, loudness, screen brightness and warmth to screen brightness, look speed, light intensity, strobe, beam sweep, haze and haptic seats, with amount and curve. Per-preset defaults (Pulse adds strobe on the bar; Ocean drives haze from the swell).
+- **Effects in the scene**: beams sweep and strobe; a low haze layer glows with the screen colour (when Atmospherics is on); haptic seats glow under each seat (when Haptics is on); the screen spills soft light onto the room.
+- **Safety** (`src/show/safety.ts`): a sliding-window flash guard (never more than 3 strobe hits in any second, reduced motion turns them off) and red-flash softening on beat-pulsed colour.
+- **Saved with the alternative**: the show (preset, look, mapping, tempo, cues, matrix) is stored in the alternative and the project file, so switching alternatives switches shows; a reopened show that used uploads asks for them again and plays its generated stand-ins meanwhile.
+- **Record clip**: the viewport and the limited master mix into a WebM (VP9 + Opus) or MP4 on Safari, up to 30 s, downloaded from the transport; nothing is uploaded.
+- Fix: the project save listener was nested inside the analysis listener (from Round 05), adding a new subscription on every state change; it is now registered once.
+- Tests: 99 (13 new: matrix shaping, sums and clamping, per-preset copies, cue arcs, fades, video crossfade, looping, palette blend, bar time, flash guard window, red softening, saved-show normalisation and a project round trip).
+
+Known limits: no DMX patch or show-control export yet; MIDI clock / OSC tempo input not started; the haze layer and spill light are artistic, not photometric; recording frame rate depends on the viewer's GPU.
 
 ## 9. Open questions for the OM team
 
