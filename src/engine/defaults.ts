@@ -14,7 +14,7 @@ export const OM_300_FLAGSHIP: VenueConfiguration = {
     azimuthLeftDeg: -110,
     azimuthRightDeg: 110,
     elevationLowerDeg: -7.5,
-    elevationUpperDeg: 72,
+    elevationUpperDeg: 54,
   },
   floor: { mainFloorElevation: -1.8, slabThickness: 0.3 },
   seating: {
@@ -57,7 +57,7 @@ export const OM_300_FLAGSHIP: VenueConfiguration = {
   },
   fitout: { riserDeck: 'deck-acoustic', guardrail: 'rail-glass', seatAccessory: 'acc-side-table' },
   systems: {
-    lighting: { enabled: true, tier: 'premium', scale: 1 },
+    lighting: { enabled: true, tier: 'premium', scale: 1, crownDropDeg: 0 },
     audio: { enabled: true, tier: 'premium', scale: 1, product: 'holoplot-x1' },
     haptics: { enabled: true, tier: 'premium', scale: 1 },
     atmospherics: { enabled: true, tier: 'standard', scale: 1 },
@@ -101,6 +101,7 @@ export function normalizeConfig(raw: VenueConfiguration & { ledPreview?: { enabl
     for (const s of Object.values(systems)) s.enabled = false;
     c.systems = systems;
   }
+  c.systems.lighting.crownDropDeg ??= 0;
   c.structure ??= { ...cloneConfig(OM_300_FLAGSHIP).structure, enabled: false };
   return c;
 }

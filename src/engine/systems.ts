@@ -63,25 +63,20 @@ const TRACKING: Record<string, Partial<Record<Tier, number>>> = { 'trk-cam': { s
 const Z: Vec3 = [0, 0, 1];
 const blockIdOf = (system: SystemId, unit: SystemUnit) => `block.sys.${system}.${unit.id}`;
 
-/** Points spaced evenly (half a step in from the start) along a closed polyline. */
-function alongClosed(points: Vec3[], n: number, phase = 0.5): Vec3[] {
-  const segs = points.map((p, i) => [p, points[(i + 1) % points.length]] as const);
-  const lens = segs.map(([a, b]) => Math.hypot(b[0] - a[0], b[1] - a[1], b[2] - a[2]));
-  const total = lens.reduce((s, l) => s + l, 0);
-  return Array.from({ length: n }, (_, k) => {
-    let d = ((k + phase) / n) * total;
-    let i = 0;
-    while (d > lens[i] && i < lens.length - 1) d -= lens[i++];
-    const [a, b] = segs[i];
-    const t = d / lens[i];
-    return [a[0] + (b[0] - a[0]) * t, a[1] + (b[1] - a[1]) * t, a[2] + (b[2] - a[2]) * t];
-  });
-}
-
 const circlePoints = (r: number, z: number, n: number, phase = 0): Vec3[] => Array.from({ length: n }, (_, k) => [r * Math.sin(((k + phase) / n) * 2 * Math.PI), r * Math.cos(((k + phase) / n) * 2 * Math.PI), z]);
 
-/** Plan distance of the farthest corner of a rectangle about (0, cy). */
-const rectReach = (hx: number, cy: number, hy: number) => Math.max(Math.hypot(hx, cy - hy), Math.hypot(hx, cy + hy));
+/**
+ * The lighting crown ring: its centre-line radius, height and elevation. It sits just above the screen's
+ * top edge (or `crownDropDeg` below it), on the sphere and inset by half a truss depth.
+ */
+export function crownRing(c: VenueConfiguration) {
+  const R = c.sphere.radius;
+  const ring = ringOf(c);
+  const top = Math.min(toRad(c.media.elevationUpperDeg), toRad(75));
+  const el = Math.max(toRad(c.media.elevationLowerDeg) + toRad(5), top - toRad(c.systems.lighting.crownDropDeg ?? 0)) + 0.35 / R;
+  const r = R - 0.3;
+  return { radius: ring + r * Math.cos(el), z: r * Math.sin(el), el };
+}
 
 /** `layout`: the support structure, when enabled; arrays then sit in its bays and every hung load becomes a pick request. */
 export function generateSystems(c: VenueConfiguration, objects: VenueObject[], seats: SeatRecord[], layout?: StructureLayout) {
@@ -97,11 +92,6 @@ export function generateSystems(c: VenueConfiguration, objects: VenueObject[], s
   const radiusAt = (z: number) => sphereRadiusAt(R, z, ring);
   let occlusion = 0;
   const picks: PickRequest[] = [];
-  const hoistPicks = (points: Vec3[], hoist: SystemUnit, load: number, rig: string) =>
-    points.forEach((p, k) => {
-      place('lighting', hoist, RIGGING, 'Hoist', facingFrame(p, [0, 0, p[2]]), { pick_load_kg: +(load / points.length).toFixed(1), rig });
-      picks.push({ id: `${rig.replace(/\s+/g, '-')}.${k}`, source: `${rig} hoist ${k + 1}`, position: [p[0], p[1], p[2] + hoist.size[2]], load: load / points.length + hoist.weight.value, kind: 'hoist' });
-    });
 
   const tally = (system: SystemId, unit: SystemUnit, n: number) => {
     const t = tallies.get(system) ?? new Map<string, UnitTally>();
@@ -157,56 +147,39 @@ export function generateSystems(c: VenueConfiguration, objects: VenueObject[], s
     const hoist = unitOf('hoist')!;
     const lightLayer = getSystem('lighting').layer;
     const deckTop = f + c.stage.height;
-    const st = c.stage;
-    // Stage truss: 0.5 m outside the stage edge, 5.5 m above the deck, shrunk to stay inside the sphere.
-    const tz = Math.min(deckTop + 5.5, R * 0.8);
-    const limit = radiusAt(tz) - 0.5;
-    let hx = st.width / 2 + 0.5;
-    let hy = st.depth / 2 + 0.5;
-    if (rectReach(hx, st.centerY, hy) > limit) {
-      let lo = 0.1;
-      let hi = 1;
-      for (let i = 0; i < 40; i++) {
-        const mid = (lo + hi) / 2;
-        if (rectReach(hx * mid, st.centerY, hy * mid) <= limit) lo = mid;
-        else hi = mid;
-      }
-      hx *= lo;
-      hy *= lo;
-      issues.push({ severity: 'info', code: 'truss-shrunk', message: `The stage truss was reduced to ${(2 * hx).toFixed(1)} × ${(2 * hy).toFixed(1)} m to stay inside the sphere.`, path: 'systems.lighting' });
-    }
-    const rect: Vec3[] = [
-      [-hx, st.centerY - hy, tz],
-      [hx, st.centerY - hy, tz],
-      [hx, st.centerY + hy, tz],
-      [-hx, st.centerY + hy, tz],
-    ];
-    const perimeter = 4 * (hx + hy);
-    const stageTarget: Vec3 = [0, st.centerY, deckTop];
-    let rigLoad = 0;
-    out.push({ id: 'sys.lighting.truss.stage', name: 'Stage_Truss', layer: RIGGING, category: 'Truss', geometry: { kind: 'polyline', points: rect, closed: true }, operatingState: 'all', metadata: { system: 'lighting', unit: truss.id, length_m: +perimeter.toFixed(3), z: +tz.toFixed(4), status: 'conceptual' } });
-    tally('lighting', truss, perimeter);
-    rigLoad += perimeter * truss.weight.value;
-    for (let i = 0; i < 4; i++) for (let s = 0; s * 0.5 < (i % 2 ? 2 * hy : 2 * hx); s++) {
-      const a = rect[i];
-      const b = rect[(i + 1) % 4];
-      const len = Math.hypot(b[0] - a[0], b[1] - a[1]);
-      const t = Math.min(1, (s * 0.5 + 0.25) / len);
-      occlude([a[0] + (b[0] - a[0]) * t, a[1] + (b[1] - a[1]) * t, tz], 0.5 * truss.size[2]);
-    }
-    const hang = (unit: SystemUnit, points: Vec3[], target: (p: Vec3) => Vec3, layer: string, category: string) =>
-      points.forEach((p) => {
-        const o: Vec3 = [p[0], p[1], p[2] - 0.25 - unit.size[2]];
-        place('lighting', unit, layer, category, facingFrame(o, [target(o)[0], target(o)[1], o[2]]));
+    const stageTarget: Vec3 = [0, c.stage.centerY, deckTop];
+    // Crown ring: one circular truss set into the slice just above the screen's top edge, so the rig reads
+    // as part of the dome instead of a frame hung in the room. It follows the radius, ring radius and top
+    // edge, and sits `crownDropDeg` below the top edge (capped at 75° so a closed dome keeps a usable ring).
+    const cr = crownRing(c);
+    const circ = 2 * Math.PI * cr.radius;
+    let rigLoad = circ * truss.weight.value;
+    out.push({ id: 'sys.lighting.truss.crown', name: 'Crown_Truss', layer: RIGGING, category: 'Truss', geometry: { kind: 'circle', center: [0, 0, cr.z], normal: Z, radius: cr.radius }, operatingState: 'all', metadata: { system: 'lighting', unit: truss.id, length_m: +circ.toFixed(3), z: +cr.z.toFixed(4), elevation_deg: +((cr.el * 180) / Math.PI).toFixed(3), status: 'conceptual' } });
+    tally('lighting', truss, circ);
+    const segs = Math.max(8, Math.ceil(circ / 0.5));
+    circlePoints(cr.radius, cr.z, segs).forEach((p) => occlude(p, (circ / segs) * truss.size[2]));
+    // Fixtures sit on the truss's inner face, below its centre line, aimed into the room.
+    const mount = (unit: SystemUnit, count: number, phase: number, target: (o: Vec3) => Vec3, rig: string) =>
+      circlePoints(cr.radius - truss.size[1] / 2 - unit.size[1] / 2, cr.z - unit.size[2], count, phase).forEach((o) => {
+        place('lighting', unit, lightLayer, 'LightingFixture', facingFrame(o, target(o)), { rig });
         occlude(o, unit.size[0] * unit.size[2]);
         rigLoad += unit.weight.value;
       });
     const spot = unitOf('fx-spot');
     const wash = unitOf('fx-wash')!;
-    if (spot) hang(spot, alongClosed(rect, n('lighting', perimeter / 1.5)), () => stageTarget, lightLayer, 'LightingFixture');
-    hang(wash, alongClosed(rect, n('lighting', perimeter / (spot ? 2.5 : 2))), () => stageTarget, lightLayer, 'LightingFixture');
-    const trussHoists = Math.max(4, Math.ceil(perimeter / 6));
-    hoistPicks(alongClosed(rect, trussHoists, 0).map((p) => [p[0], p[1], p[2] + 0.25] as Vec3), hoist, rigLoad, 'stage truss');
+    const laser = unitOf('fx-laser');
+    // Spots cover the stage; washes cross the room to the far side of the audience; lasers fan straight down.
+    if (spot) mount(spot, n('lighting', circ / 3), 0.5, () => stageTarget, 'crown');
+    mount(wash, n('lighting', circ / (spot ? 4 : 3)), 0.25, (o) => [-o[0] * 0.4, -o[1] * 0.4, f], 'crown');
+    if (laser) mount(laser, n('lighting', 6), 0.125, (o) => [o[0] * 0.3, o[1] * 0.3, f], 'crown');
+    // The crown hangs off the top ring girder where the screen has one; elsewhere it is hoisted.
+    const nh = Math.max(4, Math.ceil(circ / 6));
+    circlePoints(cr.radius, cr.z + truss.size[2] / 2, nh).forEach((p, k) => {
+      const az = Math.atan2(p[0], p[1]);
+      const onRing = layout && az >= mb.az0 && az <= mb.az1;
+      if (!onRing) place('lighting', hoist, RIGGING, 'Hoist', facingFrame(p, [0, 0, p[2]]), { pick_load_kg: +(rigLoad / nh).toFixed(1), rig: 'crown' });
+      picks.push({ id: `crown.${k}`, source: `crown ring pick ${k + 1}`, position: onRing ? p : [p[0], p[1], p[2] + hoist.size[2]], load: rigLoad / nh + (onRing ? 0 : hoist.weight.value), kind: onRing ? 'array' : 'hoist' });
+    });
 
     // Wash ring at the screen base, just inside the sphere, lighting the room and the audience.
     const wz = f + 0.3;
@@ -218,27 +191,6 @@ export function generateSystems(c: VenueConfiguration, objects: VenueObject[], s
       place('lighting', wash, lightLayer, 'LightingFixture', facingFrame(o, [0, 0, wz]), { rig: 'base ring' });
     }
 
-    // Flagship halo: a ring hung in the oculus above the screen's top edge, with movers and lasers.
-    const laser = unitOf('fx-laser');
-    if (laser && spot) {
-      const hz = Math.min(R * Math.sin(mb.el1), R * 0.95);
-      const hr = Math.max(1.5, Math.min(0.75 * (ring + R * Math.cos(mb.el1)), radiusAt(hz) - 1));
-      const circ = 2 * Math.PI * hr;
-      out.push({ id: 'sys.lighting.truss.halo', name: 'Halo_Truss', layer: RIGGING, category: 'Truss', geometry: { kind: 'circle', center: [0, 0, hz], normal: Z, radius: hr }, operatingState: 'all', metadata: { system: 'lighting', unit: truss.id, length_m: +circ.toFixed(3), z: +hz.toFixed(4), status: 'conceptual' } });
-      tally('lighting', truss, circ);
-      let haloLoad = circ * truss.weight.value;
-      circlePoints(hr, hz, Math.max(8, Math.ceil(circ / 0.5))).forEach((p) => occlude(p, (circ / Math.max(8, Math.ceil(circ / 0.5))) * truss.size[2]));
-      const down = (p: Vec3): Vec3 => [p[0] * 0.3, p[1] * 0.3, f];
-      for (const [unit, count, phase] of [[spot, n('lighting', 12), 0.5], [laser, n('lighting', 6), 0.25]] as const)
-        circlePoints(hr, hz, count, phase).forEach((p) => {
-          const o: Vec3 = [p[0], p[1], p[2] - 0.25 - unit.size[2]];
-          place('lighting', unit, lightLayer, 'LightingFixture', facingFrame(o, down(o)), { rig: 'halo' });
-          occlude(o, unit.size[0] * unit.size[2]);
-          haloLoad += unit.weight.value;
-        });
-      const haloHoists = Math.max(4, Math.ceil(circ / 6));
-      hoistPicks(circlePoints(hr, hz + 0.25, haloHoists), hoist, haloLoad, 'halo');
-    }
   }
 
   // ── Immersive audio ───────────────────────────────────────────────────────

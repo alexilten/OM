@@ -72,8 +72,10 @@ describe('support structure', () => {
     expect(s.hungLoad).toBeCloseTo(m.systems.pickLoad, 6);
     const total = s.ribReactions.reduce((t, x) => t + x, 0);
     expect(total).toBeCloseTo(s.steelWeight + s.ledLoad + s.hungLoad, 6);
-    // Stage-truss hoists pick up through the screen; the oculus hoists from the crown grid.
-    expect(s.picks.some((p) => p.carrier === 'pick-beam' && p.penetratesScreen)).toBe(true);
+    // The lighting crown hangs off the top ring girder, so nothing picks up through the screen; the zenith
+    // array hoists from the crown grid in the oculus.
+    expect(s.picks.some((p) => p.id.startsWith('crown.') && p.carrier === 'ring')).toBe(true);
+    expect(s.picks.some((p) => p.penetratesScreen)).toBe(false);
     expect(s.picks.some((p) => p.carrier === 'crown')).toBe(true);
     expect(m.objects.filter((o) => o.category === 'Chain')).toHaveLength(s.picks.filter((p) => p.carrier !== 'ring').length);
   });

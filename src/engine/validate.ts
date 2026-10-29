@@ -165,6 +165,8 @@ export function validateConfig(c: VenueConfiguration): Issue[] {
     if (!['standard', 'premium', 'flagship'].includes(s.tier)) err(`systems.${spec.id}.tier`, 'system-tier', `${spec.label} tier must be standard, premium or flagship.`);
     if (!finite(s.scale) || s.scale < 0.5 || s.scale > 2) err(`systems.${spec.id}.scale`, 'system-scale', `${spec.label} density must be between 0.5 and 2.`);
   }
+  const drop = c.systems.lighting?.crownDropDeg;
+  if (drop !== undefined && (!finite(drop) || drop < 0 || drop > 20)) err('systems.lighting.crownDropDeg', 'crown-drop', 'The lighting crown ring sits 0–20° below the screen top edge.');
   if (c.systems.audio && !getAudioProduct(c.systems.audio.product ?? '')) err('systems.audio.product', 'unknown-audio', `Unknown audio array product "${c.systems.audio.product}".`);
 
   const st = c.structure;

@@ -260,6 +260,8 @@ export interface SystemSetting {
   scale: number;
   /** Product choice where a system offers several (audio: an id from AUDIO_PRODUCTS). */
   product?: string;
+  /** Lighting only: how far below the screen's top edge the crown ring sits (degrees of elevation, 0–20). */
+  crownDropDeg?: number;
 }
 
 export type SystemId = 'lighting' | 'audio' | 'haptics' | 'atmospherics' | 'tracking';
