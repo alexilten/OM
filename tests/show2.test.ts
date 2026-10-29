@@ -31,38 +31,39 @@ describe('modulation matrix', () => {
     expect(Object.values(out).every((v) => v === 0)).toBe(true);
   });
   it('gives every preset its own copy of a matrix', () => {
-    const a = matrixFor('pulse');
+    const a = matrixFor('machine-heart');
     a[0].amount = -1;
-    expect(matrixFor('pulse')[0].amount).not.toBe(-1);
-    expect(matrixFor('pulse').some((r) => r.target === 'lights.strobe')).toBe(true);
+    expect(matrixFor('machine-heart')[0].amount).not.toBe(-1);
+    expect(matrixFor('machine-heart').some((r) => r.target === 'lights.strobe')).toBe(true);
   });
 });
 
 describe('cue list', () => {
-  const p = getShowPreset('deep-space')!;
+  const p = getShowPreset('monolith')!;
   const cues = presetCues(p);
-  it('builds a four-part arc for every preset, with real looks', () => {
+  it('builds a six-part arc for every preset, with real looks', () => {
     for (const sp of SHOW_PRESETS) {
       const cs = presetCues(sp);
       expect(cs.length).toBeGreaterThan(0);
       for (const c of cs) expect(VIDEO_PRESETS.some((v) => v.id === c.look.video)).toBe(true);
     }
-    expect(cues.map((c) => c.name)).toEqual(['Intro', 'Build', 'Drop', 'Outro']);
-    expect(showLength(cues)).toBe(40);
+    expect(cues.map((c) => c.name)).toEqual(['Intro', 'Build', 'Drop', 'Breakdown', 'Final', 'Outro']);
+    expect(showLength(cues)).toBe(44);
   });
   it('holds, fades and crossfades the video between cues', () => {
     expect(lookAt(cues, 4)!.cueIndex).toBe(0);
-    const mid = lookAt(cues, 10)!; // Build fades over bars 8–12
+    const mid = lookAt(cues, 11)!; // Build fades over bars 8–14
     expect(mid.cueIndex).toBe(1);
-    expect(mid.intensity).toBeCloseTo(0.6 + (0.9 - 0.6) * 0.5);
-    const drop = lookAt(cues, 16.5)!; // Drop fades in one bar and changes the look
-    expect(drop.video).not.toBe(drop.fromVideo);
-    expect(drop.mix).toBeCloseTo(0.5);
-    expect(lookAt(cues, 17)!.mix).toBe(1);
+    expect(mid.intensity).toBeCloseTo(0.45 + (0.9 - 0.45) * 0.5);
+    const drop = lookAt(cues, 16.01)!; // Drop is a hard cut to the preset's contrast look
+    expect(drop.video).toBe('sandsea');
+    expect(drop.mix).toBe(1);
+    expect(drop.intensity).toBeCloseTo(1.25);
+    expect(lookAt(cues, 28.5)!.intensity).toBeCloseTo(1.35);
   });
   it('loops after its length', () => {
-    expect(lookAt(cues, 40 + 10)!.cueIndex).toBe(1);
-    expect(lookAt(cues, 39)!.cueIndex).toBe(3);
+    expect(lookAt(cues, 44 + 10)!.cueIndex).toBe(1);
+    expect(lookAt(cues, 43)!.cueIndex).toBe(5);
   });
   it('blends palettes and switches the lighting mode halfway', () => {
     const a = { video: 'nebula', palette: ['#000000'], lights: 'follow' as const, pulse: 0, haze: 0, intensity: 1 };
@@ -98,7 +99,7 @@ describe('saved show', () => {
   it('normalises bad input and keeps good input', () => {
     expect(normalizeShow(null)).toBeUndefined();
     const s = normalizeShow({ video: 'nope', bpm: 999, cues: [{ name: 'A', bar: 4, fadeBars: 2, look: { video: 'aurora', pulse: 3 } }, 'junk'], matrix: [{ source: 'bass', target: 'haze', amount: 5 }, { source: 'x', target: 'haze' }] })!;
-    expect(s.video).toBe('nebula');
+    expect(s.video).toBe('monolith');
     expect(s.bpm).toBe(220);
     expect(s.cues).toHaveLength(1);
     expect(s.cues[0].look.video).toBe('aurora');
@@ -108,7 +109,7 @@ describe('saved show', () => {
   });
   it('survives a project save and reopen with its alternative', () => {
     const c = cloneConfig(OM_300_FLAGSHIP);
-    c.show = normalizeShow({ presetId: 'pulse', video: 'tunnel', bpm: 124, cues: presetCues(getShowPreset('pulse')!), matrix: matrixFor('pulse') });
+    c.show = normalizeShow({ presetId: 'machine-heart', video: 'machine', bpm: 124, cues: presetCues(getShowPreset('machine-heart')!), matrix: matrixFor('machine-heart') });
     const reopened = parseProject(JSON.parse(JSON.stringify({ schema: PROJECT_SCHEMA, activeId: c.id, alternatives: [c] }))).project;
     expect(normalizeShow(reopened.alternatives[0].show)).toEqual(c.show);
   });

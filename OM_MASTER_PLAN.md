@@ -100,8 +100,9 @@ Export: `ExportManifest`.
 | **08** Live Show Preview I | EXPERIENCE tab: video upload + shader ambient presets mapped on the sphere, from-seat view, audio upload + synthesised soundscapes, BPM detection / tap tempo, virtual-speaker binaural preview, transport | A/V in sync within one frame over 10 min; BPM within 2 %; 60 fps budget — see `docs/plans/SHOW_PREVIEW_PLAN.md` | **Done** (see §8h) |
 | **09** Live Show Preview II | Content-driven lighting (zone + palette), beams in haze, modulation matrix (beat / bands / colour → video, lights, haze, haptics), show presets, cue list, clip recording, flash-safety limiter | Washes track adjacent screen colour within 100 ms; one-click presets; flash limiter verified | **Done** (see §8i) |
 | **10** Venue forms | Retractable proscenium: a front sector of the screen (azimuth and elevation set by sliders) on its own carrier that slides back along the forward axis to open a stage portal, as a kinetic assembly on the TRANSFORM timeline. Seating anywhere along the forward axis: blocks in front of and behind the origin, with sightlines and immersion scored either side. Torus form: the screen becomes a torus section (major radius, tube radius) with the top cut off by an upper elevation limit, alongside the sphere | Proscenium moves without clashing (screen, structure, stage) and exports both states; seats in front of the origin keep screen clearance and score; torus surface is exact in Rhino and LED, structure and analysis follow it | Done (§8j) |
-| **11** CAD deliverables | Exact geometry everywhere practical, named blocks, multiple state exports, schedules (CSV), DXF, GLB, PDF sheets | Export validator extended to every state | Planned |
-| **12** Optimisation | Reverse configuration ("250 premium seats", "fit 30 m wide"), immersion-driven layout search, comparison dashboards | Deterministic, explainable proposals | Planned |
+| **11** Show content | Replace the stock-feeling looks and soundscapes with cinematic, original ones: monumental slabs, a black hole, a folding lattice, industrial noise, glam starfields, a desert storm, ink glyphs; trailer-scale sound design (brass walls, Shepard rise, ticking clock, crushed drums, war drums, vocal clusters) that builds and drops with a six-cue arc | Every preset uses only the new looks and sounds; its sound and cues land on the same bars; old saved shows still open | Done (§8k) |
+| **12** CAD deliverables | Exact geometry everywhere practical, named blocks, multiple state exports, schedules (CSV), DXF, GLB, PDF sheets | Export validator extended to every state | Planned |
+| **13** Optimisation | Reverse configuration ("250 premium seats", "fit 30 m wide"), immersion-driven layout search, comparison dashboards | Deterministic, explainable proposals | Planned |
 
 ## 6. Known risks
 
@@ -161,6 +162,7 @@ Export: `ExportManifest`.
 | 2026-10-29 | Torus form = the sphere's profile circle (tube radius R) offset from the vertical axis by a ring radius a; ring 0 is the sphere. P(θ,φ) = ((a + R cosφ) sinθ, (a + R cosφ) cosθ, R sinφ), so azimuth, elevation and the normal keep their meaning and every subsystem takes `ring` as one extra argument. At 90° upper elevation the top opens with radius a | One exact rational NURBS for both forms; "cut the top off" is the existing elevation limit |
 | 2026-10-29 | "Scoots back in z space" read as depth: the proscenium pushes back along +Y, away from the audience (Z is up in OM Studio), then its two halves slide apart; one 0–1 Open slider drives both legs, played on the TRANSFORM timeline or held in every state | Alex: "a generative slider where it pushes back and then opens up with a slide" |
 | 2026-10-29 | Round 10 becomes Venue forms (retractable proscenium, seating either side of the origin, torus with the top cut off); CAD deliverables move to 11 and optimisation to 12 | Alex's geometry asks change the form itself, so they land before the deliverables are fixed |
+| 2026-10-29 | Round 11 becomes Show content (cinematic looks and sound); CAD deliverables move to 12 and optimisation to 13. The new content is inspired by epic film scores, industrial music and glam rock, but names no artist or film | Alex: the old presets felt "lame… off the shelf"; step it up to "epic and badass beats and visuals" |
 | 2026-10-28 | Standing capacity at 0.5 m² per person on the clear floor of the standing state (0.25 m grid inside the screen clearance) | Conceptual density, to be replaced by the OM team's figure (see §9 question 12) |
 
 ## 8. Round 01 status
@@ -304,6 +306,17 @@ Delivered:
 - Tests: 112 (13 new: torus point/normal/inverse, exact torus NURBS and top opening, Pappus area, torus section, every system on the torus, ring validation and old-file upgrade, seats in front of the origin, proscenium split, carriage motion, portal header, path and pocket reporting, validation, proscenium on the torus).
 
 Known limits: speakers and other items in its path are reported, not moved; the building pocket is reported, not drawn into the building fit; the torus uses the outer half only (elevation ±90°).
+
+## 8k. Round 11 status
+
+Delivered:
+
+- **Seven new looks** (GLSL on the sphere, `src/show/shaders.ts`): Monolith (cliff-sized slabs in burning fog), Event Horizon (a black hole with its disc wrapping the dome), Tesseract (an endless lattice that folds on every bar), Machine (torn scanlines and red/white industrial noise), Starman (chrome stardust and prism sweeps), Sand Sea (desert horizon and a storm wall), Logogram (circular ink glyphs blooming in fog), plus a calibration grid. The Round 08 looks are kept for old saved shows but hidden from the menus.
+- **Six new soundscapes** synthesised in Web Audio (`src/show/audio.ts`), with new instruments: convolution reverb with a generated impulse, tanh drive, feedback echo, a braam (detuned saws in octaves through a driven, snapping low-pass), trailer impacts, Shepard-Risset rise, toms, FM metal clanks, snare, clap, clock tick, felt piano, filtered note lines, reverse risers, pipe organ and formant voices. Leviathan, Horizon, Machine, Glam, Sandstorm and Glyph each follow the same 44-bar arc as the cues (`partAt`): intro, build with a rise, a hard drop, breakdown, final and outro.
+- **Presets** pair each look with its sound, tempo and a contrasting drop look. Cue arcs have six cues (Intro, Build, hard-cut Drop at 1.25 intensity, Breakdown, Final at 1.35, Outro), and each preset has its own modulation matrix.
+- Tests: show tests updated and 4 new (presets use only current content, contrasting drops and matrices, unique shader slots and old ids still load, sound arc matches cue bars).
+
+Known limits: the soundscapes are generative (random variation per pass), so no two loops are identical; the shaders are tuned for desktop GPUs and fall back to lower frame rates in software rendering.
 
 ## 9. Open questions for the OM team
 

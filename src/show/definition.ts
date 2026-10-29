@@ -40,7 +40,7 @@ const VIDEOS = VIDEO_PRESETS.map((v) => v.id);
 export function normalizeShow(raw: unknown): ShowDefinition | undefined {
   if (!raw || typeof raw !== 'object') return undefined;
   const s = raw as Record<string, unknown>;
-  const video = oneOf(s.video, VIDEOS, 'nebula');
+  const video = oneOf(s.video, VIDEOS, 'monolith');
   const pal = palette(s.palette, ['#3b5bdb', '#7048e8', '#15aabf']);
   const cues = Array.isArray(s.cues)
     ? (s.cues as Record<string, unknown>[])
@@ -75,7 +75,7 @@ export function normalizeShow(raw: unknown): ShowDefinition | undefined {
     video,
     ...(typeof s.videoFile === 'string' ? { videoFile: s.videoFile } : {}),
     mapping: oneOf(s.mapping, ['canvas', 'equirect', 'dome'] as const, 'canvas'),
-    soundscape: oneOf(s.soundscape, SOUNDSCAPES.map((a) => a.id), 'drone'),
+    soundscape: oneOf(s.soundscape, SOUNDSCAPES.map((a) => a.id), 'leviathan'),
     ...(typeof s.audioFile === 'string' ? { audioFile: s.audioFile } : {}),
     bpm: num(s.bpm, 40, 220, 70),
     offset: num(s.offset, 0, 60, 0),
