@@ -116,6 +116,8 @@ select { width: 100%; padding: 6px 8px; border: 1px solid var(--line-strong); bo
 .linked { display: grid; grid-template-columns: 1fr 1fr; gap: 8px; }
 .linked > div { display: flex; flex-direction: column; gap: 4px; color: var(--muted); font-size: 11px; }
 .linked .num { width: 100%; }
+.readout { display: flex; align-items: center; justify-content: space-between; gap: 8px; color: var(--muted); font-size: 11px; font-variant-numeric: tabular-nums; }
+.readout button { white-space: nowrap; }
 .coverage { display: grid; grid-template-columns: 1fr 1fr; gap: 8px; }
 .coverage > div { background: #f6f7f9; border-radius: 10px; padding: 10px; display: flex; flex-direction: column; }
 .coverage strong { font-size: 18px; font-weight: 600; font-variant-numeric: tabular-nums; }

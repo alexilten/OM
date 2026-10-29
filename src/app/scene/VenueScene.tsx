@@ -2,8 +2,8 @@ import { Line } from '@react-three/drei';
 import type { ThreeEvent } from '@react-three/fiber';
 import { useEffect, useMemo, useRef } from 'react';
 import * as THREE from 'three';
-import { spherePoint, toDeg } from '../../engine/coordinates';
-import { mediaBounds } from '../../engine/media';
+import { surfaceNormal, surfacePoint, toDeg } from '../../engine/coordinates';
+import { mediaBounds, ringOf } from '../../engine/media';
 import { sectionPlane, sphereSection } from '../../engine/section';
 import { GRADES } from '../../engine/immersion';
 import { poseAt, type Pose, type TransformationModel } from '../../engine/kinetics';
@@ -58,11 +58,11 @@ function useSelect() {
   };
 }
 
-function MediaSurface({ o }: { o: VenueObject }) {
+function MediaSurface({ o, offset }: { o: VenueObject; offset?: Vec3 }) {
   const g = o.geometry as Extract<Geometry, { kind: 'spherePatch' }>;
   const display = useStudio((s) => s.mediaDisplay);
   const onClick = useSelect();
-  const geo = useMemo(() => spherePatchGeometry(g.radius, g.azimuth0, g.azimuth1, g.elevation0, g.elevation1), [g.radius, g.azimuth0, g.azimuth1, g.elevation0, g.elevation1]);
+  const geo = useMemo(() => spherePatchGeometry(g.radius, g.azimuth0, g.azimuth1, g.elevation0, g.elevation1, g.ring), [g.radius, g.azimuth0, g.azimuth1, g.elevation0, g.elevation1, g.ring]);
   const tex = useMemo(
     () => (display === 'calibration' ? calibrationTexture(toDeg(g.azimuth0), toDeg(g.azimuth1), toDeg(g.elevation0), toDeg(g.elevation1)) : null),
     [display, g.azimuth0, g.azimuth1, g.elevation0, g.elevation1],
@@ -70,7 +70,7 @@ function MediaSurface({ o }: { o: VenueObject }) {
   useEffect(() => () => geo.dispose(), [geo]);
   useEffect(() => () => tex?.dispose(), [tex]);
   return (
-    <mesh geometry={geo} onClick={onClick(o.id)}>
+    <mesh geometry={geo} position={offset} onClick={onClick(o.id)}>
       {tex ? (
         <meshBasicMaterial map={tex} side={THREE.DoubleSide} toneMapped={false} />
       ) : (
@@ -160,7 +160,7 @@ const colorCache = () => {
 const TILE_SEG = 3;
 const TILE_TRIS = TILE_SEG * TILE_SEG * 2;
 
-function LedTiles({ objects }: { objects: VenueObject[] }) {
+function LedTiles({ objects, offsetOf }: { objects: VenueObject[]; offsetOf: OffsetOf }) {
   const selectedId = useStudio((s) => s.selectedId);
   const select = useStudio((s) => s.select);
   const ledColor = useStudio((s) => s.ledColor);
@@ -172,12 +172,16 @@ function LedTiles({ objects }: { objects: VenueObject[] }) {
       const g = o.geometry as Extract<Geometry, { kind: 'spherePatch' }>;
       // 5 mm in front of the ideal surface so the tiles do not z-fight with it.
       const R = g.radius - 0.005;
+      const d = offsetOf(o.id) ?? [0, 0, 0];
       const start = pos.length / 3;
       for (let j = 0; j <= TILE_SEG; j++)
         for (let i = 0; i <= TILE_SEG; i++) {
-          const p = spherePoint(R, g.azimuth0 + ((g.azimuth1 - g.azimuth0) * i) / TILE_SEG, g.elevation0 + ((g.elevation1 - g.elevation0) * j) / TILE_SEG);
-          pos.push(...p);
-          nor.push(-p[0] / R, -p[1] / R, -p[2] / R);
+          const az = g.azimuth0 + ((g.azimuth1 - g.azimuth0) * i) / TILE_SEG;
+          const el = g.elevation0 + ((g.elevation1 - g.elevation0) * j) / TILE_SEG;
+          const p = surfacePoint(R, az, el, g.ring);
+          const nrm = surfaceNormal(az, el);
+          pos.push(p[0] + d[0], p[1] + d[1], p[2] + d[2]);
+          nor.push(-nrm[0], -nrm[1], -nrm[2]);
         }
       const row = TILE_SEG + 1;
       for (let j = 0; j < TILE_SEG; j++)
@@ -192,7 +196,7 @@ function LedTiles({ objects }: { objects: VenueObject[] }) {
     g.setAttribute('color', new THREE.Float32BufferAttribute(new Float32Array(pos.length), 3));
     g.setIndex(idx);
     return g;
-  }, [objects]);
+  }, [objects, offsetOf]);
   useEffect(() => () => geo.dispose(), [geo]);
   useEffect(() => {
     const col = geo.getAttribute('color') as THREE.BufferAttribute;
@@ -236,8 +240,8 @@ function EyePoints({ objects, offsetOf }: { objects: VenueObject[]; offsetOf: Of
   );
 }
 
-function ReferenceSphere({ R }: { R: number }) {
-  const lines = useMemo(() => sphereGraticule(R), [R]);
+function ReferenceSphere({ R, ring }: { R: number; ring: number }) {
+  const lines = useMemo(() => sphereGraticule(R, 15, ring), [R, ring]);
   return (
     <group>
       {lines.map((pts, i) => (
@@ -253,7 +257,7 @@ function SectionOverlay() {
   const res = useMemo(() => {
     if (!section.enabled) return null;
     const plane = sectionPlane(section);
-    const cut = sphereSection(plane, mediaBounds(config.sphere.radius, config.media));
+    const cut = sphereSection(plane, mediaBounds(config.sphere.radius, config.media, ringOf(config)));
     // Nudge overlay 2 cm into the kept half-space so the clipping plane never hides it.
     const n = plane.normal;
     const push = (p: Vec3): Vec3 => [p[0] - n[0] * 0.02, p[1] - n[1] * 0.02, p[2] - n[2] * 0.02];
@@ -337,13 +341,21 @@ export function VenueScene() {
     [model],
   );
   const media = model.objects.find((o) => o.id === 'media.ideal')!;
+  // With a retractable proscenium the screen is drawn as its fixed sections plus the moving carriage.
+  const pieces = useMemo(() => model.objects.filter((o) => o.layer === '01_MEDIA/Proscenium'), [model]);
   const eyes = useMemo(() => model.objects.filter((o) => o.category === 'EyePoint'), [model]);
   const tiles = useMemo(() => model.objects.filter((o) => o.category === 'LEDTile'), [model]);
 
   return (
     <group rotation={[-Math.PI / 2, 0, 0]}>
-      {shown(model.objects.find((o) => o.id === 'ref.sphere')!) && <ReferenceSphere R={model.config.sphere.radius} />}
-      {show ? <ShowSurface o={media} /> : shown(media) && <MediaSurface o={media} />}
+      {shown(model.objects.find((o) => o.id === 'ref.sphere')!) && <ReferenceSphere R={model.config.sphere.radius} ring={ringOf(model.config)} />}
+      {show ? (
+        <ShowSurface o={media} pieces={pieces.length ? pieces.map((o) => ({ o, offset: offsetOf(o.id) })) : undefined} />
+      ) : pieces.length ? (
+        pieces.filter(shown).map((o) => <MediaSurface key={o.id} o={o} offset={offsetOf(o.id)} />)
+      ) : (
+        shown(media) && <MediaSurface o={media} />
+      )}
       {show && (
         <>
           <ShowBeams />
@@ -364,7 +376,7 @@ export function VenueScene() {
         const geo = blockGeos.get(blockId)!;
         return <Instances key={blockId} objects={visible} geometry={geo} color={system ? SYSTEM_COLORS[system] : led ? COLORS.led : COLORS.seat} offsetOf={offsetOf} foldScale={led || system ? 1 : foldScaleOf(geo)} />;
       })}
-      {tiles.length > 0 && shown(tiles[0]) && <LedTiles objects={tiles} />}
+      {tiles.length > 0 && shown(tiles[0]) && <LedTiles objects={tiles} offsetOf={offsetOf} />}
       {lines.filter(({ o }) => shown(o)).map(({ o, pts }) => (
         <Line key={o.id} points={pts} color={lineColor(o)} lineWidth={o.layer.includes('Envelope') ? 0.8 : o.category === 'Rib' || o.category.endsWith('Ring') || o.category === 'RingGirder' ? 2.5 : 1.5} dashed={o.category === 'Chain' || (o.layer.includes('Envelope') && o.category !== 'BuildingEnvelope') || o.category === 'Circulation' || o.id === 'ref.floorline'} dashSize={0.5} gapSize={0.3} />
       ))}

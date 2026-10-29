@@ -29,7 +29,6 @@ const SEATING: FieldSpec[] = [
   F('seating.rowPitch', 'Row pitch', 'length', 0.8, 2.6, 0.01, 'Back-to-back distance between rows. Must exceed seat depth + clearway.'),
   F('seating.riserHeight', 'Riser height', 'length', 0, 0.5, 0.01, 'Height step between rows (seating rake).'),
   F('seating.frontRowRadius', 'Front row radius', 'length', 1, 12, 0.05, 'Plan distance from the seating layout origin to the first row.'),
-  F('seating.focusY', 'Layout origin Y', 'length', -6, 12, 0.05, 'Rows are arcs about (0, Y). Seats face this point.'),
   F('seating.sectionAngleDeg', 'Fan angle', 'angle', 20, 300, 1, 'Total plan angle of the seating fan.'),
   F('seating.aisleCount', 'Radial aisles', 'count', 0, 8, 1, 'Aisles splitting the fan into equal blocks.'),
   F('seating.aisleWidth', 'Aisle width', 'length', 0.6, 2.5, 0.05, 'Clear aisle width.'),
@@ -46,24 +45,77 @@ const ENVELOPE: FieldSpec[] = [
   F('envelope.overheadClearance', 'Overhead clearance', 'length', 0, 6, 0.1, 'Clearance above the top of the media surface for rigging and structure.'),
 ];
 
+/** Default ring radius when switching to the torus form (m). */
+const TORUS_RING = 4;
+
 function SphereSize() {
   const R = useStudio((s) => s.config.sphere.radius);
+  const ring = useStudio((s) => s.config.sphere.ringRadius ?? 0);
+  const el1 = useStudio((s) => s.config.media.elevationUpperDeg);
   const units = useStudio((s) => s.units);
   const setParam = useStudio((s) => s.setParam);
+  const setParams = useStudio((s) => s.setParams);
   const k = units === 'm' ? 1 : 1 / M_PER_FT;
   const back = (v: number) => (units === 'm' ? v : v * M_PER_FT);
+  const torus = ring > 0;
   return (
     <>
-      <ParamField spec={F('sphere.radius', 'Radius', 'length', 4, 30, 0.05, 'Reference sphere radius. Its centre is the world origin and the reference eye point.')} />
+      <Segmented
+        value={torus ? 'torus' : 'sphere'}
+        options={[
+          { value: 'sphere', label: 'Sphere' },
+          { value: 'torus', label: 'Torus, open top' },
+        ]}
+        onChange={(v) => setParams(v === 'torus' ? [['sphere.ringRadius', TORUS_RING], ['media.elevationUpperDeg', 90]] : [['sphere.ringRadius', 0]])}
+      />
+      <ParamField
+        spec={F('sphere.radius', torus ? 'Tube radius' : 'Radius', 'length', 4, 30, 0.05, torus ? 'Radius of the screen profile. The profile is a circle centred on the ring, swept round the vertical axis.' : 'Reference sphere radius. Its centre is the world origin and the reference eye point.')}
+      />
+      {torus && (
+        <ParamField spec={F('sphere.ringRadius', 'Ring radius', 'length', 0.5, 12, 0.05, 'Plan offset of the profile centre from the vertical axis. The screen bulges outwards by this much and, at 90° upper elevation, leaves a top opening this radius.')} />
+      )}
       <div className="linked">
         <div>
-          <span>Diameter</span>
-          <NumberInput value={2 * R * k} step={0.1} onCommit={(v) => setParam('sphere.radius', back(v) / 2)} />
+          <span>{torus ? 'Outer diameter' : 'Diameter'}</span>
+          <NumberInput value={2 * (ring + R) * k} step={0.1} onCommit={(v) => setParam('sphere.radius', Math.max(0.1, back(v) / 2 - ring))} />
         </div>
-        <div>
-          <span>Circumference</span>
-          <NumberInput value={2 * Math.PI * R * k} step={0.1} onCommit={(v) => setParam('sphere.radius', back(v) / (2 * Math.PI))} />
-        </div>
+        {torus ? (
+          <div>
+            <span>Top opening</span>
+            <NumberInput value={(el1 >= 89.99 ? 2 * ring : 2 * (ring + R * Math.cos((el1 * Math.PI) / 180))) * k} step={0.1} onCommit={(v) => setParams([['sphere.ringRadius', Math.max(0.5, back(v) / 2)], ['media.elevationUpperDeg', 90]])} />
+          </div>
+        ) : (
+          <div>
+            <span>Circumference</span>
+            <NumberInput value={2 * Math.PI * R * k} step={0.1} onCommit={(v) => setParam('sphere.radius', back(v) / (2 * Math.PI))} />
+          </div>
+        )}
+      </div>
+    </>
+  );
+}
+
+/** Slides the whole seating layout along the forward axis, either side of the world origin. */
+function SeatingPosition() {
+  const R = useStudio((s) => s.config.sphere.radius + (s.config.sphere.ringRadius ?? 0));
+  const focusY = useStudio((s) => s.config.seating.focusY);
+  const seats = useStudio((s) => s.model.seats);
+  const setParam = useStudio((s) => s.setParam);
+  const ahead = seats.filter((x) => x.position[1] > 1e-6).length;
+  const meanY = seats.length ? seats.reduce((t, x) => t + x.position[1], 0) / seats.length : 0;
+  const lim = Math.ceil(R);
+  return (
+    <>
+      <ParamField
+        spec={F('seating.focusY', 'Seating position Y', 'length', -lim, lim, 0.05, 'Moves the whole seating layout forward (+Y, towards the main screen) or back (−Y). Rows are arcs about (0, Y) and seats face that point; seats may sit in front of or behind the world origin.')}
+      />
+      <div className="readout">
+        <span>
+          {ahead} in front of the origin · {seats.length - ahead} behind
+        </span>
+        <button className="ghost" title="Slide the layout so the seats' average position is on the origin" disabled={!seats.length || Math.abs(meanY) < 0.01} onClick={() => setParam('seating.focusY', +(focusY - meanY).toFixed(2))}>
+          Centre on origin
+        </button>
       </div>
     </>
   );
@@ -189,6 +241,7 @@ export function ParameterPanel() {
             </option>
           ))}
         </select>
+        <SeatingPosition />
         {SEATING.map((f) => (
           <ParamField key={f.path} spec={f} />
         ))}

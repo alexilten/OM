@@ -54,8 +54,12 @@ export interface RationalSurface {
   weights: number[][];
 }
 
-/** u = azimuth, v = elevation; the surface normal (∂u × ∂v) points towards the origin. */
-export function spherePatchNurbs(R: number, az0: number, az1: number, el0: number, el1: number): RationalSurface {
+/**
+ * u = azimuth, v = elevation; the surface normal (∂u × ∂v) points towards the origin. With `ring` > 0
+ * the elevation profile is moved out by the ring radius before it is revolved: still exact, since a
+ * translated rational arc keeps its weights, so the torus patch is exact too.
+ */
+export function spherePatchNurbs(R: number, az0: number, az1: number, el0: number, el1: number, ring = 0): RationalSurface {
   const u = rationalArc(az0, az1);
   const v = rationalArc(el0, el1);
   const points: Vec3[][] = [];
@@ -68,7 +72,8 @@ export function spherePatchNurbs(R: number, az0: number, az1: number, el0: numbe
     const rowW: number[] = [];
     for (let j = 0; j < v.angles.length; j++) {
       const sv = v.scales[j];
-      const rho = R * Math.cos(v.angles[j]) * sv;
+      // Profile control point (ring + R cos v, R sin v) · scale; the ring offset is not scaled.
+      const rho = ring + R * Math.cos(v.angles[j]) * sv;
       const z = R * Math.sin(v.angles[j]) * sv;
       rowP.push([rho * dx, rho * dy, z]);
       rowW.push(u.weights[i] * v.weights[j]);

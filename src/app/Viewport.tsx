@@ -43,7 +43,7 @@ function CameraRig() {
   };
 
   useEffect(() => {
-    const v = presetView(view.name, model.config.sphere.radius);
+    const v = presetView(view.name, model.config.sphere.radius + (model.config.sphere.ringRadius ?? 0));
     go(v.pos, v.target);
     // eslint-disable-next-line react-hooks/exhaustive-deps
   }, [view.nonce, controls]);
@@ -94,7 +94,7 @@ function Clipping() {
 }
 
 export function Viewport() {
-  const R = useStudio((s) => s.model.config.sphere.radius);
+  const R = useStudio((s) => s.model.config.sphere.radius + (s.model.config.sphere.ringRadius ?? 0));
   const floorZ = useStudio((s) => s.model.config.floor.mainFloorElevation);
   const select = useStudio((s) => s.select);
   // The show is watched in a dark room: dim the work lights so the screen and beams carry the scene.

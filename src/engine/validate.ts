@@ -64,6 +64,10 @@ export function validateConfig(c: VenueConfiguration): Issue[] {
 
   const R = c.sphere.radius;
   if (R < 3 || R > 60) err('sphere.radius', 'radius-range', 'Sphere radius must be between 3 m and 60 m.');
+  const ring = c.sphere.ringRadius ?? 0;
+  if (!finite(ring) || ring < 0 || ring > 60) err('sphere.ringRadius', 'ring-range', 'Torus ring radius must be between 0 m and 60 m.');
+  else if (ring > 0 && c.media.elevationUpperDeg > 89.9 && ring < 1.5)
+    warn('sphere.ringRadius', 'ring-opening', `The top opening is only ${(2 * ring).toFixed(1)} m across; too small for rigging access.`);
 
   const { azimuthLeftDeg: aL, azimuthRightDeg: aR, elevationLowerDeg: eL, elevationUpperDeg: eU } = c.media;
   if (aL < -180 || aR > 180) err('media.azimuthLeftDeg', 'azimuth-range', 'Azimuth limits must lie within ±180°.');
@@ -116,6 +120,16 @@ export function validateConfig(c: VenueConfiguration): Issue[] {
     if (t.deckThickness <= 0 || t.foldedSeatHeight <= 0) err('transformation.deckThickness', 'kin-deck', 'Deck thickness and folded seat height must be above zero.');
     if (t.wagonSpeed <= 0 || t.stageSpeed <= 0) err('transformation.wagonSpeed', 'kin-speed', 'Machinery speeds must be above zero.');
     if (t.clearanceHoldS < 0 || t.foldS < 0) err('transformation.clearanceHoldS', 'kin-time', 'Hold and fold times cannot be negative.');
+    const p = t.proscenium;
+    if (p?.enabled) {
+      if (![p.widthDeg, p.topDeg, p.travel, p.speed].every(finite)) err('transformation.proscenium.widthDeg', 'prosc-number', 'Proscenium settings must be finite numbers.');
+      else {
+        if (p.widthDeg < 10 || p.widthDeg > 180) err('transformation.proscenium.widthDeg', 'prosc-width', 'Proscenium width must be between 10° and 180° of azimuth.');
+        if (p.topDeg <= c.media.elevationLowerDeg + 1) err('transformation.proscenium.topDeg', 'prosc-top', 'The proscenium top must be at least 1° above the screen\'s lower edge.');
+        if (p.travel < 0 || p.travel > 20) err('transformation.proscenium.travel', 'prosc-travel', 'Proscenium travel must be between 0 and 20 m.');
+        if (p.speed <= 0) err('transformation.proscenium.speed', 'prosc-speed', 'Proscenium speed must be above zero.');
+      }
+    }
   }
 
   if (c.operatingState !== 'seated' && c.operatingState !== 'standing') err('operatingState', 'operating-state', 'Operating state must be "seated" or "standing".');

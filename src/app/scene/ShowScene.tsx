@@ -1,7 +1,7 @@
 import { useFrame } from '@react-three/fiber';
 import { useEffect, useMemo, useRef } from 'react';
 import * as THREE from 'three';
-import type { Frame, Geometry, VenueObject } from '../../engine/types';
+import type { Frame, Geometry, VenueObject, Vec3 } from '../../engine/types';
 import { blendLooks, lookAt } from '../../show/cues';
 import { evaluateMatrix, luminance, warmth } from '../../show/modulation';
 import { getVideoPreset } from '../../show/presets';
@@ -56,9 +56,28 @@ function useVideoSampler() {
  * The media surface playing the show, and the show's per-frame driver: clock, beat, cue look and
  * modulation are computed here once and shared through `live` with the beams, haze and seats.
  */
-export function ShowSurface({ o }: { o: VenueObject }) {
+export function ShowSurface({ o, pieces }: { o: VenueObject; pieces?: { o: VenueObject; offset?: Vec3 }[] }) {
   const g = o.geometry as Extract<Geometry, { kind: 'spherePatch' }>;
-  const geo = useMemo(() => spherePatchGeometry(g.radius, g.azimuth0, g.azimuth1, g.elevation0, g.elevation1), [g.radius, g.azimuth0, g.azimuth1, g.elevation0, g.elevation1]);
+  // With a proscenium the screen is several patches; their UVs are remapped onto the whole media
+  // frame so one material (and one driver) plays the show across all of them.
+  const parts = pieces ?? [{ o }];
+  const patches = parts.map((p) => p.o.geometry as Extract<Geometry, { kind: 'spherePatch' }>);
+  const key = patches.map((q) => [q.radius, q.azimuth0, q.azimuth1, q.elevation0, q.elevation1, q.ring ?? 0].join(',')).join('|');
+  const geos = useMemo(
+    () =>
+      patches.map((q) => {
+        const geo = spherePatchGeometry(q.radius, q.azimuth0, q.azimuth1, q.elevation0, q.elevation1, q.ring);
+        const uv = geo.getAttribute('uv') as THREE.BufferAttribute;
+        for (let i = 0; i < uv.count; i++) {
+          const az = q.azimuth0 + uv.getX(i) * (q.azimuth1 - q.azimuth0);
+          const el = q.elevation0 + uv.getY(i) * (q.elevation1 - q.elevation0);
+          uv.setXY(i, (az - g.azimuth0) / (g.azimuth1 - g.azimuth0), (el - g.elevation0) / (g.elevation1 - g.elevation0));
+        }
+        return geo;
+      }),
+    // eslint-disable-next-line react-hooks/exhaustive-deps
+    [key, g.azimuth0, g.azimuth1, g.elevation0, g.elevation1],
+  );
   const source = useShow((s) => s.video);
   const videoTex = useMemo(() => {
     const v = source.kind === 'file' ? getVideo() : null;
@@ -96,7 +115,7 @@ export function ShowSurface({ o }: { o: VenueObject }) {
       }),
     [],
   );
-  useEffect(() => () => geo.dispose(), [geo]);
+  useEffect(() => () => geos.forEach((x) => x.dispose()), [geos]);
   useEffect(() => () => material.dispose(), [material]);
   useEffect(() => () => videoTex?.dispose(), [videoTex]);
   const sample = useVideoSampler();
@@ -170,7 +189,13 @@ export function ShowSurface({ o }: { o: VenueObject }) {
     if (s.playing && Math.abs(t - s.time) > 0.1) useShow.setState({ time: t });
   });
 
-  return <mesh geometry={geo} material={material} />;
+  return (
+    <>
+      {geos.map((x, i) => (
+        <mesh key={i} geometry={x} material={material} position={parts[i].offset} />
+      ))}
+    </>
+  );
 }
 
 /** Beams from every lighting fixture, coloured by the screen zone in front of them, pulsed and swept by the matrix. */

@@ -1,19 +1,19 @@
 /**
- * Media-surface shader for the live preview. The vertex position is in engine coordinates (the sphere
- * patch is built in them), so the fragment shader recovers azimuth and elevation exactly and maps either
- * a generated look or a video with the same rules as `mapUv` in timing.ts.
+ * Media-surface shader for the live preview. The patch UVs run linearly in azimuth and elevation, so
+ * the fragment shader recovers both exactly (on the sphere and the torus form alike) and maps either a
+ * generated look or a video with the same rules as `mapUv` in timing.ts.
  */
 export const SHOW_VERTEX = /* glsl */ `
-varying vec3 vPos;
+varying vec2 vUv;
 void main() {
-  vPos = position;
+  vUv = uv;
   gl_Position = projectionMatrix * modelViewMatrix * vec4(position, 1.0);
 }
 `;
 
 export const SHOW_FRAGMENT = /* glsl */ `
 precision highp float;
-varying vec3 vPos;
+varying vec2 vUv;
 uniform float uTime;
 uniform float uBeat;
 uniform float uBar;
@@ -96,9 +96,9 @@ vec3 look(int id, vec3 d, float az, float el) {
 }
 
 void main() {
-  vec3 d = normalize(vPos);
-  float az = atan(d.x, d.y);
-  float el = asin(clamp(d.z, -1.0, 1.0));
+  float az = mix(uBounds.x, uBounds.y, vUv.x);
+  float el = mix(uBounds.z, uBounds.w, vUv.y);
+  vec3 d = vec3(cos(el) * sin(az), cos(el) * cos(az), sin(el));
   vec3 c;
   if (uUseVideo) {
     vec2 uv = mapUv(az, el);
