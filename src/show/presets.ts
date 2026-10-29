@@ -72,7 +72,7 @@ export const SOUNDSCAPES: Soundscape[] = [
 
 export const SHOW_PRESETS: ShowPreset[] = [
   { id: 'monolith', label: 'Monolith', video: 'monolith', soundscape: 'leviathan', bpm: 60, drop: 'sandsea', palette: ['#c2410c', '#52525b', '#fde68a'], description: 'Slabs the size of cliffs in a burning fog; a brass wall every four bars.' },
-  { id: 'event-horizon', label: 'Event Horizon', video: 'horizon', soundscape: 'horizon', bpm: 72, drop: 'tesseract', palette: ['#f59e0b', '#fff7ed', '#1e3a8a'], description: 'A black hole ahead, its disc wrapping the dome; the clock never stops ticking.' },
+  { id: 'event-horizon', label: 'Event Horizon', video: 'horizon', soundscape: 'horizon', bpm: 72, drop: 'tesseract', palette: ['#f59e0b', '#1e3a8a', '#fff7ed'], description: 'A black hole ahead, its disc wrapping the dome; the clock never stops ticking.' },
   { id: 'tesseract', label: 'Tesseract', video: 'tesseract', soundscape: 'horizon', bpm: 90, drop: 'horizon', palette: ['#fbbf24', '#7c2d12', '#e0f2fe'], description: 'An infinite lattice of light that folds on every bar.' },
   { id: 'machine-heart', label: 'Machine Heart', video: 'machine', soundscape: 'machine', bpm: 120, drop: 'machine', palette: ['#dc2626', '#fafafa', '#18181b'], description: 'Industrial: torn scanlines, crushed drums, red and white, strobe-limited hits.' },
   { id: 'starman', label: 'Starman', video: 'starman', soundscape: 'glam', bpm: 132, drop: 'tesseract', palette: ['#e11d48', '#06b6d4', '#facc15'], description: 'Glam stomp under chrome stardust and prism sweeps.' },
