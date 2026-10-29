@@ -89,14 +89,16 @@ export function analyzeFit(c: VenueConfiguration): BuildingFit {
   const top = b.floorElevation + b.clearHeight;
   const margins = { left: -e.half - r.x0, right: r.x1 - e.half, front: r.y1 - e.half, back: -e.half - r.y0, top: top - e.topZ };
   const minPlan = Math.min(margins.left, margins.right, margins.front, margins.back);
-  const service = R + c.envelope.serviceZone;
+  // The torus form's outer radius is ring + tube radius.
+  const outerR = (c.sphere.ringRadius ?? 0) + R;
+  const service = outerR + c.envelope.serviceZone;
   const walkway = e.half + b.circulationWidth;
 
   const columns: BuildingColumn[] = columnPositions(c).map(({ id, x, y }) => {
     const distance = nearestDistance(x, y, b.columns.size);
     // Inside the square envelope + walkway but outside the service ring counts as circulation.
     const inWalk = Math.abs(x) - b.columns.size / 2 < walkway && Math.abs(y) - b.columns.size / 2 < walkway;
-    const status: ColumnStatus = distance < R ? 'inside' : distance < service ? 'service' : inWalk ? 'circulation' : 'clear';
+    const status: ColumnStatus = distance < outerR ? 'inside' : distance < service ? 'service' : inWalk ? 'circulation' : 'clear';
     return { id, x, y, status, distance };
   });
   const clash = columns.filter((k) => k.status === 'inside' || k.status === 'service');
@@ -112,7 +114,8 @@ export function analyzeFit(c: VenueConfiguration): BuildingFit {
   const planHalf = Math.min(b.width / 2 - Math.abs(b.offsetX), b.depth / 2 - Math.abs(b.offsetY)) - b.circulationWidth - c.envelope.serviceZone;
   const byRoof = Math.sin(el1) > 1e-6 ? (top - c.envelope.overheadClearance) / Math.sin(el1) : Infinity;
   const byColumns = Math.min(Infinity, ...columns.map((k) => k.distance - c.envelope.serviceZone));
-  const maxRadius = Math.max(0, Math.min(planHalf, byRoof, byColumns));
+  // Plan limits bound the outer radius; the ring is fixed, so the tube radius takes what is left.
+  const maxRadius = Math.max(0, Math.min(planHalf - (c.sphere.ringRadius ?? 0), byRoof, byColumns - (c.sphere.ringRadius ?? 0)));
 
   const m = (v: number) => `${v.toFixed(2)} m`;
   const checks: FitCheck[] = [

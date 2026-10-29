@@ -13,6 +13,51 @@ const FIELDS: FieldSpec[] = [
   { path: 'transformation.foldS', label: 'Seat fold time', kind: 'value', unit: 's', min: 0, max: 120, step: 5, tip: 'Time for every seat to fold flat before the wagons move.' },
 ];
 
+const OPEN: FieldSpec = { path: 'transformation.proscenium.open', label: 'Open (0 closed – 1 open)', kind: 'value', unit: '', min: 0, max: 1, step: 0.01, tip: '0 = closed flush with the screen. Up to 0.5 the screen pushes straight back; from 0.5 to 1 it splits down the middle and the two halves slide apart until the opening is clear.' };
+
+const PROSCENIUM: FieldSpec[] = [
+  { path: 'transformation.proscenium.widthDeg', label: 'Opening width', kind: 'angle', min: 10, max: 180, step: 1, tip: 'Azimuth span of the moving screen section, centred on the forward axis (+Y).' },
+  { path: 'transformation.proscenium.topDeg', label: 'Opening top', kind: 'angle', min: -20, max: 85, step: 0.5, tip: 'Upper edge of the moving section. It runs from the screen\'s lower edge up to here; the screen above stays fixed as the header.' },
+  { path: 'transformation.proscenium.travel', label: 'Push back', kind: 'length', min: 0.5, max: 12, step: 0.1, tip: 'How far the section pushes straight back along +Y, away from the audience, before the halves slide apart.' },
+  { path: 'transformation.proscenium.speed', label: 'Carriage speed', kind: 'value', unit: 'm/s', min: 0.02, max: 0.5, step: 0.01, tip: 'Travel speed of the proscenium carriage.' },
+];
+
+/** The retractable proscenium: a front sector of the screen that pushes back, then splits and slides apart. */
+function ProsceniumControls() {
+  const p = useStudio((s) => s.config.transformation.proscenium);
+  const transforms = useStudio((s) => s.config.transformation.enabled);
+  const metrics = useStudio((s) => s.model.metrics);
+  const setParam = useStudio((s) => s.setParam);
+  const m = (k: string) => metrics.find((x) => x.key === k)?.value;
+  const w = m('prosc.width');
+  const h = m('prosc.height');
+  return (
+    <>
+      <Toggle checked={p.enabled} label="Retractable proscenium" onChange={(v) => setParam('transformation.proscenium.enabled', v)} />
+      {p.enabled && (
+        <>
+          <ParamField spec={OPEN} />
+          <div className="readout">
+            <span>{p.open <= 0 ? 'Closed' : p.open <= 0.5 ? `Pushed back ${(p.travel * Math.min(1, 2 * p.open)).toFixed(1)} m` : `Pushed back ${p.travel.toFixed(1)} m, halves ${Math.round((2 * p.open - 1) * 100)}% apart`}</span>
+          </div>
+          {transforms && <Toggle checked={p.onTimeline} label="Play it on the seated → standing timeline" onChange={(v) => setParam('transformation.proscenium.onTimeline', v)} />}
+          <p className="hint">{transforms && p.onTimeline ? 'Closed when seated; opens to this setting when standing.' : 'Held at this setting in every state.'}</p>
+          {PROSCENIUM.map((f) => (
+            <ParamField key={f.path} spec={f} />
+          ))}
+          {typeof w === 'number' && typeof h === 'number' && (
+            <div className="readout">
+              <span>
+                Opening {w.toFixed(1)} × {h.toFixed(1)} m
+              </span>
+            </div>
+          )}
+        </>
+      )}
+    </>
+  );
+}
+
 export const formatTime = (s: number) => `${Math.floor(s / 60)}:${String(Math.floor(s % 60)).padStart(2, '0')}`;
 
 /** Where on the timeline a time falls: one of the two end states, or in transit. */
@@ -59,6 +104,8 @@ export function TransformSection() {
             ))}
         </>
       )}
+      <div className="row-label">Proscenium</div>
+      <ProsceniumControls />
       {model && (
         <>
           <div className="row-label">Show and export as</div>
@@ -133,8 +180,9 @@ function usePlayback() {
   }, [playing]);
 }
 
-const STEP_SHORT: Record<string, string> = { interlock: 'Clear house', fold: 'Fold seats', move: 'Nest wagons', lift: 'Lower stage' };
-const STEP_COLOR: Record<string, string> = { interlock: '#9aa0a6', fold: '#b48ead', move: '#1f5fbf', lift: '#e4572e' };
+// Keyed by step id first (the proscenium is a 'move' step of its own), then by kind.
+const STEP_SHORT: Record<string, string> = { interlock: 'Clear house', fold: 'Fold seats', move: 'Nest wagons', lift: 'Lower stage', proscenium: 'Proscenium back', 'proscenium-slide': 'Proscenium apart' };
+const STEP_COLOR: Record<string, string> = { interlock: '#9aa0a6', fold: '#b48ead', move: '#1f5fbf', lift: '#e4572e', proscenium: '#2a9d8f', 'proscenium-slide': '#52b788' };
 
 export function Timeline() {
   usePlayback();
@@ -150,8 +198,14 @@ export function Timeline() {
   const pct = (x: number) => `${(x / d) * 100}%`;
   const state = stateAt(tr, t);
   const audienceClear = t >= tr.steps[0].duration;
-  // Steps that run in parallel (wagons and stage lift) get their own lane.
-  const lanes = tr.steps.map((s, i) => (tr.steps.slice(0, i).some((p) => p.start < s.start + s.duration - 1e-9 && s.start < p.start + p.duration - 1e-9) ? 1 : 0));
+  // Steps that run in parallel (wagons, stage lift, proscenium) each take the first free lane.
+  const lanes: number[] = [];
+  tr.steps.forEach((s, i) => {
+    const busy = new Set(tr.steps.slice(0, i).flatMap((p, k) => (p.start < s.start + s.duration - 1e-9 && s.start < p.start + p.duration - 1e-9 ? [lanes[k]] : [])));
+    let lane = 0;
+    while (busy.has(lane)) lane++;
+    lanes.push(lane);
+  });
   const laneCount = Math.max(...lanes) + 1;
   return (
     <div className="timeline">
@@ -184,8 +238,8 @@ export function Timeline() {
       </div>
       <div className="tl-track">
         {tr.steps.map((s, i) => (
-          <div key={s.id} className="tl-step" style={{ left: pct(s.start), width: pct(s.duration), top: `${(lanes[i] * 100) / laneCount}%`, height: `${100 / laneCount}%`, background: STEP_COLOR[s.kind] }} title={`${s.label}: ${formatTime(s.start)}–${formatTime(s.start + s.duration)}`}>
-            <span>{STEP_SHORT[s.kind]}</span>
+          <div key={s.id} className="tl-step" style={{ left: pct(s.start), width: pct(s.duration), top: `${(lanes[i] * 100) / laneCount}%`, height: `${100 / laneCount}%`, background: STEP_COLOR[s.id] ?? STEP_COLOR[s.kind] }} title={`${s.label}: ${formatTime(s.start)}–${formatTime(s.start + s.duration)}`}>
+            <span>{STEP_SHORT[s.id] ?? STEP_SHORT[s.kind]}</span>
           </div>
         ))}
         {tr.conflicts.map((c, i) => (

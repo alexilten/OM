@@ -7,9 +7,10 @@ import { getSeatingProduct } from '../library/seating';
 import { architectureMetrics, architectureObjects, stageObjects } from './architecture';
 import { generateBuilding } from './building';
 import { LAYERS } from './layers';
-import { generateTransformation } from './kinetics';
+import { generateTransformation, translateGeometry } from './kinetics';
 import { generateLed } from './led';
-import { mediaMetrics, mediaObjects, referenceObjects, sphereRadiusAt } from './media';
+import { mediaMetrics, mediaObjects, referenceObjects, ringOf, sphereRadiusAt } from './media';
+import { carriageOf, checkProscenium, heldOffset, prosceniumObjects, prosceniumSector } from './proscenium';
 import { generateSeating } from './seating';
 import { generateStructure, structureLayout } from './structure';
 import { generateSystems } from './systems';
@@ -38,7 +39,15 @@ export function generateVenue(config: VenueConfiguration): VenueModel {
   const led = generateLed(config);
   issues.push(...stage.issues, ...seating.issues, ...led.issues);
 
-  const base = [...referenceObjects(config), ...mediaObjects(config), ...stage.objects, ...seating.objects, ...led.objects, ...architectureObjects(config)];
+  let base = [...referenceObjects(config), ...mediaObjects(config), ...prosceniumObjects(config), ...stage.objects, ...seating.objects, ...led.objects, ...architectureObjects(config)];
+  // A proscenium held at a fixed opening is generated in that pose in every state.
+  const sector = prosceniumSector(config);
+  const onCarriage = (o: (typeof base)[number]) => (sector ? carriageOf(sector, o) : undefined);
+  base = base.map((o) => {
+    const h = onCarriage(o);
+    const d = h && heldOffset(config, h);
+    return d ? { ...o, geometry: translateGeometry(o.geometry, d), metadata: { ...o.metadata, carriage_offset_m: d.join(',') } } : o;
+  });
   const kin = generateTransformation(config, base, seating.seats);
   issues.push(...kin.issues);
   const building = generateBuilding(config);
@@ -49,6 +58,8 @@ export function generateVenue(config: VenueConfiguration): VenueModel {
   const structure = layout && generateStructure(config, layout, systems.picks, led.summary);
   if (structure) issues.push(...structure.issues);
   const objects = [...base, ...kin.objects, ...systems.objects, ...(structure?.objects ?? []), ...building.objects];
+  const prosc = checkProscenium(config, objects, new Set(base.filter(onCarriage).map((o) => o.id)));
+  issues.push(...prosc.issues);
 
   const known = new Set(LAYERS.map((l) => l.path));
   for (const o of objects) if (!known.has(o.layer)) throw new Error(`Object ${o.id} uses unknown layer ${o.layer}`);
@@ -64,7 +75,7 @@ export function generateVenue(config: VenueConfiguration): VenueModel {
   const eyeZ = seats.map((s) => s.eyePoint[2]);
   const nearest = seats.length ? Math.min(...seats.map((s) => s.distanceFromOrigin)) : 0;
   const minClear = seats.length ? Math.min(...seats.map((s) => s.screenClearance)) : 0;
-  const floorRadius = sphereRadiusAt(R, floor);
+  const floorRadius = sphereRadiusAt(R, floor, ringOf(config));
 
   const audience: Metric[] = [
     { key: 'aud.seats', label: 'Seated capacity', value: seats.length, unit: 'count', quality: 'exact', group: 'Audience' },
@@ -93,7 +104,7 @@ export function generateVenue(config: VenueConfiguration): VenueModel {
     blocks: [...seating.blocks, ...led.blocks, ...systems.blocks, ...(structure?.blocks ?? [])],
     led: led.summary,
     seats,
-    metrics: [...mediaMetrics(config), ...led.metrics, ...audience, ...kin.metrics, ...architectureMetrics(config), ...building.metrics, ...systems.metrics, ...(structure?.metrics ?? [])],
+    metrics: [...mediaMetrics(config), ...led.metrics, ...audience, ...kin.metrics, ...prosc.metrics, ...architectureMetrics(config), ...building.metrics, ...systems.metrics, ...(structure?.metrics ?? [])],
     structure: structure?.summary,
     systems: systems.summary,
     transformation: kin.model,

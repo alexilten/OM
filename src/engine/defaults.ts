@@ -9,7 +9,7 @@ export const OM_300_FLAGSHIP: VenueConfiguration = {
   schemaVersion: 1,
   id: 'om-300-flagship',
   name: 'OM 300 / Flagship',
-  sphere: { radius: 13 },
+  sphere: { radius: 13, ringRadius: 0 },
   media: {
     azimuthLeftDeg: -110,
     azimuthRightDeg: 110,
@@ -42,6 +42,7 @@ export const OM_300_FLAGSHIP: VenueConfiguration = {
     stageSpeed: 0.05,
     clearanceHoldS: 60,
     foldS: 20,
+    proscenium: { enabled: false, widthDeg: 70, topDeg: 30, travel: 4, speed: 0.1, open: 1, onTimeline: true },
   },
   building: {
     enabled: true,
@@ -87,8 +88,12 @@ export function normalizeConfig(raw: VenueConfiguration & { ledPreview?: { enabl
   if (!c.led && ledPreview) c.led = { ...ledPreview, extent: 'band', placement: 'tangent', jointGap: 0 };
   c.led ??= cloneConfig(OM_300_FLAGSHIP).led;
   c.transformation ??= cloneConfig(OM_300_FLAGSHIP).transformation;
+  c.transformation.proscenium ??= { ...cloneConfig(OM_300_FLAGSHIP).transformation.proscenium };
+  c.transformation.proscenium.open ??= 1;
+  c.transformation.proscenium.onTimeline ??= true;
   c.analysis ??= cloneConfig(OM_300_FLAGSHIP).analysis;
   c.building ??= { ...cloneConfig(OM_300_FLAGSHIP).building, enabled: false };
+  c.sphere.ringRadius ??= 0;
   c.operatingState ??= 'seated';
   c.fitout ??= cloneConfig(OM_300_FLAGSHIP).fitout;
   if (!c.systems) {

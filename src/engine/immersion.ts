@@ -7,7 +7,7 @@
  * ramps and weights are meant to be tuned against physical tests and audience studies.
  */
 import { toDeg, toRad } from './coordinates';
-import { mediaBounds } from './media';
+import { mediaBounds, ringOf } from './media';
 import type { SeatRecord, VenueConfiguration, VenueModel, VenueObject, Vec3 } from './types';
 
 export type ImmersionMetricKey =
@@ -117,11 +117,14 @@ const ramp = (v: number, r: Ramp) => {
 
 interface Sample {
   p: Vec3;
+  /** Outward unit normal (away from the audience). */
+  n: Vec3;
   area: number;
 }
 
 function screenSamples(c: VenueConfiguration, stepDeg = 3): Sample[] {
-  const b = mediaBounds(c.sphere.radius, c.media);
+  const ring = ringOf(c);
+  const b = mediaBounds(c.sphere.radius, c.media, ring);
   const nu = Math.max(4, Math.ceil(toDeg(b.az1 - b.az0) / stepDeg));
   const nv = Math.max(2, Math.ceil(toDeg(b.el1 - b.el0) / stepDeg));
   const du = (b.az1 - b.az0) / nu;
@@ -132,13 +135,13 @@ function screenSamples(c: VenueConfiguration, stepDeg = 3): Sample[] {
     const ea = b.el0 + j * dv;
     const eb = ea + dv;
     const el = ea + dv / 2;
-    const area = b.R * b.R * du * (Math.sin(eb) - Math.sin(ea));
+    const area = b.R * du * (ring * dv + b.R * (Math.sin(eb) - Math.sin(ea)));
     const z = b.R * Math.sin(el);
     if (z < floor) continue; // hidden below the floor
-    const rc = b.R * Math.cos(el);
+    const rc = ring + b.R * Math.cos(el);
     for (let i = 0; i < nu; i++) {
       const az = b.az0 + (i + 0.5) * du;
-      out.push({ p: [rc * Math.sin(az), rc * Math.cos(az), z], area });
+      out.push({ p: [rc * Math.sin(az), rc * Math.cos(az), z], n: [Math.cos(el) * Math.sin(az), Math.cos(el) * Math.cos(az), Math.sin(el)], area });
     }
   }
   return out;
@@ -224,13 +227,13 @@ export function analyzeImmersion(model: VenueModel, settings: AnalysisSettings =
     let elSum = 0;
     let incSum = 0;
     let minDist = Infinity;
-    for (const { p, area } of samples) {
+    for (const { p, n, area } of samples) {
       const vx = p[0] - E[0];
       const vy = p[1] - E[1];
       const vz = p[2] - E[2];
       const r = Math.hypot(vx, vy, vz);
-      // Cosine between the screen normal (towards the origin) and the direction back to the eye.
-      const cosInc = -(p[0] * -vx + p[1] * -vy + p[2] * -vz) / (c.sphere.radius * r);
+      // Cosine between the inward screen normal and the direction back to the eye.
+      const cosInc = (n[0] * vx + n[1] * vy + n[2] * vz) / r;
       if (cosInc <= 0) continue;
       const dOmega = (area * cosInc) / (r * r);
       const azRel = Math.atan2(fx * vy - fy * vx, fx * vx + fy * vy) * -1; // + = to the seat's right

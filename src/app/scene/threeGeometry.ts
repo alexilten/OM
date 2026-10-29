@@ -4,11 +4,11 @@
  */
 import * as THREE from 'three';
 import { mergeGeometries } from 'three/examples/jsm/utils/BufferGeometryUtils.js';
-import { spherePoint } from '../../engine/coordinates';
+import { surfaceNormal, surfacePoint } from '../../engine/coordinates';
 import type { BlockDefinition, Frame, Geometry, Vec3 } from '../../engine/types';
 
-/** Spherical patch with UVs in (azimuth, elevation) space; normals point at the origin. */
-export function spherePatchGeometry(R: number, az0: number, az1: number, el0: number, el1: number): THREE.BufferGeometry {
+/** Sphere (or torus, `ring` > 0) patch with UVs in (azimuth, elevation) space; normals face inwards. */
+export function spherePatchGeometry(R: number, az0: number, az1: number, el0: number, el1: number, ring = 0): THREE.BufferGeometry {
   const segU = Math.max(8, Math.ceil(((az1 - az0) * 180) / Math.PI / 1.5));
   const segV = Math.max(4, Math.ceil(((el1 - el0) * 180) / Math.PI / 1.5));
   const pos: number[] = [];
@@ -20,9 +20,11 @@ export function spherePatchGeometry(R: number, az0: number, az1: number, el0: nu
     const el = el0 + (el1 - el0) * v;
     for (let i = 0; i <= segU; i++) {
       const u = i / segU;
-      const p = spherePoint(R, az0 + (az1 - az0) * u, el);
+      const az = az0 + (az1 - az0) * u;
+      const p = surfacePoint(R, az, el, ring);
+      const nrm = surfaceNormal(az, el);
       pos.push(...p);
-      nor.push(-p[0] / R, -p[1] / R, -p[2] / R);
+      nor.push(-nrm[0], -nrm[1], -nrm[2]);
       uv.push(u, v);
     }
   }
@@ -90,22 +92,22 @@ export function curvePoints(g: Geometry, steps = 128): Vec3[] {
         return [g.center[0] + g.radius * Math.cos(t), g.center[1] + g.radius * Math.sin(t), g.center[2]] as Vec3;
       });
     case 'latitudeArc':
-      return Array.from({ length: steps + 1 }, (_, i) => spherePoint(g.radius, g.azimuth0 + ((g.azimuth1 - g.azimuth0) * i) / steps, g.elevation));
+      return Array.from({ length: steps + 1 }, (_, i) => surfacePoint(g.radius, g.azimuth0 + ((g.azimuth1 - g.azimuth0) * i) / steps, g.elevation, g.ring));
     case 'meridianArc':
-      return Array.from({ length: steps + 1 }, (_, i) => spherePoint(g.radius, g.azimuth, g.elevation0 + ((g.elevation1 - g.elevation0) * i) / steps));
+      return Array.from({ length: steps + 1 }, (_, i) => surfacePoint(g.radius, g.azimuth, g.elevation0 + ((g.elevation1 - g.elevation0) * i) / steps, g.ring));
     default:
       return [];
   }
 }
 
-/** Latitude / longitude wireframe of the reference sphere. */
-export function sphereGraticule(R: number, stepDeg = 15): Vec3[][] {
+/** Latitude / longitude wireframe of the reference sphere, or of the outer half of the torus. */
+export function sphereGraticule(R: number, stepDeg = 15, ring = 0): Vec3[][] {
   const lines: Vec3[][] = [];
   const d = Math.PI / 180;
   for (let el = -90 + stepDeg; el < 90; el += stepDeg)
-    lines.push(Array.from({ length: 145 }, (_, i) => spherePoint(R, (i / 144) * Math.PI * 2, el * d)));
+    lines.push(Array.from({ length: 145 }, (_, i) => surfacePoint(R, (i / 144) * Math.PI * 2, el * d, ring)));
   for (let az = 0; az < 360; az += stepDeg)
-    lines.push(Array.from({ length: 73 }, (_, i) => spherePoint(R, az * d, -Math.PI / 2 + (i / 72) * Math.PI)));
+    lines.push(Array.from({ length: 73 }, (_, i) => surfacePoint(R, az * d, -Math.PI / 2 + (i / 72) * Math.PI, ring)));
   return lines;
 }
 

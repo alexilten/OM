@@ -5,7 +5,7 @@
  */
 import { getSeatingProduct } from '../library/seating';
 import { add, cross, scale, toRad } from './coordinates';
-import { sphereRadiusAt } from './media';
+import { ringOf, sphereRadiusAt } from './media';
 import type { BlockDefinition, Frame, Geometry, Issue, SeatRecord, SeatingProduct, VenueConfiguration, VenueObject, Vec3 } from './types';
 
 export function rowLabel(i: number): string {
@@ -92,7 +92,7 @@ export function generateSeating(c: VenueConfiguration): SeatingResult {
     const z = floor + i * s.riserHeight;
     const label = rowLabel(i);
     const eyeZ = z + product.eyeHeight.value;
-    const limit = sphereRadiusAt(R, eyeZ) - s.screenClearance;
+    const limit = sphereRadiusAt(R, eyeZ, ringOf(c)) - s.screenClearance;
 
     const halfAisle = s.aisleWidth / 2 / r;
     const bounds: [number, number][] = [];
@@ -153,7 +153,7 @@ export function generateSeating(c: VenueConfiguration): SeatingResult {
         position: pos,
         eyePoint: eye,
         facing,
-        screenClearance: sphereRadiusAt(R, eyeZ) - maxPlan,
+        screenClearance: sphereRadiusAt(R, eyeZ, ringOf(c)) - maxPlan,
         distanceFromOrigin: Math.hypot(...eye),
         accessible: false,
         block: blk,

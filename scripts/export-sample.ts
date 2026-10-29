@@ -5,6 +5,7 @@
  *   npm run export:sample -- my-config.json     # any saved OM Studio configuration
  *   npm run export:sample -- --presets          # the five named venue presets
  *   npm run export:sample -- --packages         # OM 300 with every system on, one file per tier
+ *   npm run export:sample -- --torus            # OM 300 as a torus with the top cut open and a retractable proscenium, every system on
  *
  * Writes the seated state and, when the venue transforms, the standing state too.
  * Then: npm run validate:3dm -- exports/<name>.3dm
@@ -19,7 +20,7 @@ import { buildPreset, VENUE_PRESETS } from '../src/engine/presets';
 import type { Tier, VenueConfiguration } from '../src/engine/types';
 import { exportRhino } from '../src/export/rhino';
 
-const ROUND = 'round07';
+const ROUND = 'round10';
 const arg = process.argv[2];
 const AUDIO_BY_TIER: Record<Tier, string> = { standard: 'l-isa-x8', premium: 'db-soundscape', flagship: 'holoplot-x1' };
 const pkg = (tier: Tier): VenueConfiguration => {
@@ -30,8 +31,20 @@ const pkg = (tier: Tier): VenueConfiguration => {
   c.systems.audio.product = AUDIO_BY_TIER[tier];
   return c;
 };
+const torus = (): VenueConfiguration => {
+  const c = pkg('flagship');
+  c.id = 'om-300-torus';
+  c.name = 'OM 300 / torus, open top, proscenium';
+  c.sphere.ringRadius = 4;
+  c.media.elevationUpperDeg = 90;
+  c.led.enabled = true;
+  c.transformation.proscenium.enabled = true;
+  return c;
+};
 const configs: VenueConfiguration[] =
-  arg === '--presets'
+  arg === '--torus'
+    ? [torus()]
+    : arg === '--presets'
     ? VENUE_PRESETS.map((v) => ({ ...buildPreset(v.size, v.performance), id: v.id, name: v.name }))
     : arg === '--packages'
       ? (['standard', 'premium', 'flagship'] as const).map(pkg)

@@ -13,7 +13,7 @@
  */
 import type rhino3dmFactory from 'rhino3dm';
 import { LAYERS, ROOT_LAYER, rhinoLayerPath } from '../engine/layers';
-import { spherePoint } from '../engine/coordinates';
+import { surfacePoint } from '../engine/coordinates';
 import { analysisObjects, seatAnalysisMetadata, type ImmersionAnalysis } from '../engine/immersion';
 import { posedObjects, poseAt } from '../engine/kinetics';
 import { spherePatchNurbs } from '../engine/nurbs';
@@ -63,6 +63,7 @@ export interface ExportManifest {
     system: string;
     ribs: number;
     rings: number;
+    nodes: number;
     ribRadius: number;
     back: number;
     segments: Record<string, number>;
@@ -86,6 +87,8 @@ export interface ExportManifest {
   };
   immersion?: { average: number; premiumCount: number; warningCount: number; gradeCounts: Record<string, number> };
   sphereRadius: number;
+  /** Torus ring radius (0 = sphere form). */
+  ringRadius: number;
   media: { azimuth0: number; azimuth1: number; elevation0: number; elevation1: number };
   checkpoints: { id: string; point: [number, number, number] }[];
 }
@@ -98,8 +101,8 @@ function frameTransform(rh: Rhino, f: Frame) {
   return t;
 }
 
-function nurbsPatch(rh: Rhino, R: number, az0: number, az1: number, el0: number, el1: number) {
-  const def = spherePatchNurbs(R, az0, az1, el0, el1);
+function nurbsPatch(rh: Rhino, R: number, az0: number, az1: number, el0: number, el1: number, ring = 0) {
+  const def = spherePatchNurbs(R, az0, az1, el0, el1, ring);
   const cu = def.points.length;
   const cv = def.points[0].length;
   const s = rh.NurbsSurface.create(3, true, def.degreeU + 1, def.degreeV + 1, cu, cv);
@@ -136,19 +139,25 @@ export function toRhinoGeometry(rh: Rhino, g: Geometry): GeometryBase {
     case 'latitudeArc': {
       const m = (g.azimuth0 + g.azimuth1) / 2;
       return rh.ArcCurve.createFromArc(
-        rh.Arc.createFromPoints(spherePoint(g.radius, g.azimuth0, g.elevation), spherePoint(g.radius, m, g.elevation), spherePoint(g.radius, g.azimuth1, g.elevation)),
+        rh.Arc.createFromPoints(surfacePoint(g.radius, g.azimuth0, g.elevation, g.ring), surfacePoint(g.radius, m, g.elevation, g.ring), surfacePoint(g.radius, g.azimuth1, g.elevation, g.ring)),
       );
     }
     case 'meridianArc': {
       const m = (g.elevation0 + g.elevation1) / 2;
       return rh.ArcCurve.createFromArc(
-        rh.Arc.createFromPoints(spherePoint(g.radius, g.azimuth, g.elevation0), spherePoint(g.radius, g.azimuth, m), spherePoint(g.radius, g.azimuth, g.elevation1)),
+        rh.Arc.createFromPoints(surfacePoint(g.radius, g.azimuth, g.elevation0, g.ring), surfacePoint(g.radius, g.azimuth, m, g.ring), surfacePoint(g.radius, g.azimuth, g.elevation1, g.ring)),
       );
     }
     case 'sphere':
+      // The torus form's reference is the outer half of the torus (elevation ±90°), as one exact rational
+      // surface; the inner half of a spindle torus would fold back through the audience.
+      if (g.ring) return rh.Brep.createFromSurface(nurbsPatch(rh, g.radius, -Math.PI, Math.PI, -Math.PI / 2, Math.PI / 2, g.ring));
       return rh.Brep.createFromSphere(new rh.Sphere(g.center, g.radius));
-    case 'spherePatch':
-      return rh.Brep.createFromSurface(nurbsPatch(rh, g.radius, g.azimuth0, g.azimuth1, g.elevation0, g.elevation1));
+    case 'spherePatch': {
+      const b = rh.Brep.createFromSurface(nurbsPatch(rh, g.radius, g.azimuth0, g.azimuth1, g.elevation0, g.elevation1, g.ring));
+      if (g.offset) b.translate(g.offset);
+      return b;
+    }
     case 'box':
       return new rh.BoundingBox(g.min, g.max).toBrep();
     case 'frameBox': {
@@ -266,7 +275,8 @@ export function buildRhinoDocument(rh: Rhino, model: VenueModel, { state = 'seat
       const d = a && tr.assemblies.find((x) => x.id === a)!.travel;
       if (d && (d[0] || d[1] || d[2])) {
         attrs.setUserString('om.operating_state', 'standing');
-        attrs.setUserString('om.pose_offset', d.map((v) => +v.toFixed(6)).join(','));
+        attrs.setUserString('om.pose_offset', d.join(','));
+        attrs.setUserString('om.moved_by', a!);
         if (o.category === 'Seat') attrs.setUserString('om.folded', 'yes');
       }
     }
@@ -332,6 +342,7 @@ export function buildRhinoDocument(rh: Rhino, model: VenueModel, { state = 'seat
       system: model.config.structure.system,
       ribs: st.ribs,
       rings: st.rings,
+      nodes: st.nodes,
       ribRadius: +(structureLayout(model.config)!.ribR).toFixed(6),
       back: +(structureLayout(model.config)!.back).toFixed(6),
       segments: count(st.segments.map((x) => x.member)),
@@ -360,6 +371,7 @@ export function buildRhinoDocument(rh: Rhino, model: VenueModel, { state = 'seat
       gradeCounts: analysis.gradeCounts,
     },
     sphereRadius: model.config.sphere.radius,
+    ringRadius: model.config.sphere.ringRadius ?? 0,
     media: { azimuth0: media.azimuth0, azimuth1: media.azimuth1, elevation0: media.elevation0, elevation1: media.elevation1 },
     checkpoints: objects
       .filter((o) => o.id === 'ref.origin' || o.id === 'seat.A.01' || o.id === 'stage.main')

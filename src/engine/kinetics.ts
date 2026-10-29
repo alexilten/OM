@@ -12,10 +12,11 @@
  * the back row of that block, leaving `nestOffset` between wagons. A wagon only clears the deck above
  * if folded seats + deck fit within the riser, which the collision check verifies rather than assumes.
  */
-import { sphereRadiusAt } from './media';
+import { ringOf, sphereRadiusAt } from './media';
+import { carriageBox, carriageLegs, carriageOf, HALVES, halfId, halfSector, movesOnTimeline, prosceniumSector } from './proscenium';
 import type { Geometry, Issue, Metric, SeatRecord, VenueConfiguration, VenueObject, Vec3 } from './types';
 
-export type AssemblyKind = 'telescopic-wagon' | 'stage-lift';
+export type AssemblyKind = 'telescopic-wagon' | 'stage-lift' | 'proscenium';
 
 export type Envelope =
   | { kind: 'sector'; center: [number, number]; r0: number; r1: number; a0: number; a1: number; z0: number; z1: number }
@@ -36,6 +37,11 @@ export interface KineticAssembly {
   block?: number;
   /** Space the assembly occupies while moving, at its seated position. */
   envelope: Envelope;
+  /**
+   * A path in straight legs run one after another (the proscenium: back, then aside). `travel`,
+   * `start` and `duration` then cover the whole path.
+   */
+  legs?: { travel: Vec3; start: number; duration: number }[];
 }
 
 export interface TransitionStep {
@@ -80,9 +86,14 @@ const SAMPLE_S = 1;
 
 export function poseAt(tr: TransformationModel, t: number): Pose {
   const offsets = new Map<string, Vec3>();
+  const at = (start: number, duration: number) => (duration > 0 ? clamp01((t - start) / duration) : t >= start ? 1 : 0);
   for (const a of tr.assemblies) {
-    const k = a.duration > 0 ? clamp01((t - a.start) / a.duration) : t >= a.start ? 1 : 0;
-    offsets.set(a.id, [a.travel[0] * k, a.travel[1] * k, a.travel[2] * k]);
+    const d: Vec3 = [0, 0, 0];
+    for (const leg of a.legs ?? [a]) {
+      const k = at(leg.start, leg.duration);
+      for (let i = 0; i < 3; i++) d[i] += leg.travel[i] * k;
+    }
+    offsets.set(a.id, d);
   }
   return { offsets, fold: tr.fold.duration > 0 ? clamp01((t - tr.fold.start) / tr.fold.duration) : t >= tr.fold.start ? 1 : 0 };
 }
@@ -97,6 +108,8 @@ export function translateGeometry(g: Geometry, d: Vec3): Geometry {
       return { ...g, a: p(g.a), b: p(g.b) };
     case 'polyline':
       return { ...g, points: g.points.map(p) };
+    case 'spherePatch':
+      return { ...g, offset: p(g.offset ?? [0, 0, 0]) };
     case 'box':
       return { ...g, min: p(g.min), max: p(g.max) };
     case 'annularSector':
@@ -156,7 +169,7 @@ export const SCREEN_GAP = 0.2;
 function clearOfScreen(c: VenueConfiguration, e: Envelope, pts: [number, number][], d: Vec3): boolean {
   const [z0, z1] = zBand(e);
   const R = c.sphere.radius;
-  const limit = Math.min(sphereRadiusAt(R, z0 + d[2]), sphereRadiusAt(R, z1 + d[2])) - SCREEN_GAP;
+  const limit = Math.min(sphereRadiusAt(R, z0 + d[2], ringOf(c)), sphereRadiusAt(R, z1 + d[2], ringOf(c))) - SCREEN_GAP;
   return pts.every(([x, y]) => Math.hypot(x + d[0], y + d[1]) <= limit + 1e-9);
 }
 
@@ -280,18 +293,50 @@ export function generateTransformation(c: VenueConfiguration, objects: VenueObje
     });
   }
 
+  // The proscenium halves push straight back once the house is clear (alongside the seat fold), then
+  // slide apart.
+  const sector = prosceniumSector(c);
+  const pr = t.proscenium;
+  if (sector && movesOnTimeline(c))
+    for (const h of HALVES) {
+      const { push, slide } = carriageLegs(c, sector, h);
+      if (!push[1] && !slide[0]) continue;
+      const box = carriageBox(c, halfSector(sector, h));
+      const pushS = push[1] / pr.speed;
+      const legs = [
+        { travel: push, start: t0, duration: pushS },
+        { travel: slide, start: t0 + pushS, duration: Math.abs(slide[0]) / pr.speed },
+      ];
+      assemblies.push({
+        id: halfId(h),
+        name: `Proscenium ${h} half`,
+        kind: 'proscenium',
+        memberIds: objects.filter((o) => carriageOf(sector, o) === h).map((o) => o.id),
+        travel: [slide[0], push[1], 0],
+        start: t0,
+        duration: legs[0].duration + legs[1].duration,
+        envelope: { kind: 'box', min: box.min, max: box.max },
+        legs,
+      });
+    }
+
   const memberOf = new Map<string, string>();
   for (const a of assemblies) for (const m of a.memberIds) memberOf.set(m, a.id);
   const moveEnd = Math.max(moveStart, ...assemblies.map((a) => a.start + a.duration));
   const wagons = assemblies.filter((a) => a.kind === 'telescopic-wagon');
   const longest = wagons.reduce((m, a) => Math.max(m, a.duration), 0);
   const lift = assemblies.find((a) => a.kind === 'stage-lift');
+  const prosc = assemblies.find((a) => a.kind === 'proscenium');
+  const proscSlide = prosc?.legs?.[1];
   const steps: TransitionStep[] = [
     { id: 'interlock', label: 'Audience cleared from all moving zones (interlock)', kind: 'interlock', start: 0, duration: t0 },
     ...(telescopic ? [{ id: 'fold', label: 'Seats fold', kind: 'fold' as const, start: t0, duration: t.foldS }] : []),
     ...(longest > 0 ? [{ id: 'move', label: 'Wagons nest under the back rows', kind: 'move' as const, start: moveStart, duration: longest }] : []),
     ...(lift ? [{ id: 'lift', label: 'Stage lowers flush with the floor', kind: 'lift' as const, start: lift.start, duration: lift.duration }] : []),
+    ...(prosc?.legs?.[0].duration ? [{ id: 'proscenium', label: 'Proscenium screen pushes back', kind: 'move' as const, start: prosc.start, duration: prosc.legs[0].duration }] : []),
+    ...(proscSlide?.duration ? [{ id: 'proscenium-slide', label: 'Proscenium halves slide apart', kind: 'move' as const, start: proscSlide.start, duration: proscSlide.duration }] : []),
   ];
+  steps.sort((a, b) => a.start - b.start);
 
   const tr: TransformationModel = {
     assemblies,
@@ -324,12 +369,14 @@ export function generateTransformation(c: VenueConfiguration, objects: VenueObje
       name: `Path_${a.name.replace(/\s+/g, '_')}`,
       layer: '04_TRANSFORMATION/Movement_Envelopes',
       category: 'MotionPath',
-      geometry: { kind: 'line', a: from, b: [from[0] + a.travel[0], from[1] + a.travel[1], from[2] + a.travel[2]] },
+      geometry: a.legs
+        ? { kind: 'polyline', points: a.legs.reduce((pts, l) => [...pts, pts[pts.length - 1].map((v, i) => v + l.travel[i]) as Vec3], [from]), closed: false }
+        : { kind: 'line', a: from, b: [from[0] + a.travel[0], from[1] + a.travel[1], from[2] + a.travel[2]] },
       operatingState: 'all',
       metadata: {
         assembly: a.id,
         kind: a.kind,
-        travel_m: +Math.hypot(...a.travel).toFixed(4),
+        travel_m: +(a.legs ? a.legs.reduce((m, l) => m + Math.hypot(...l.travel), 0) : Math.hypot(...a.travel)).toFixed(4),
         start_s: +a.start.toFixed(2),
         duration_s: +a.duration.toFixed(2),
         status: 'conceptual (not engineered)',
@@ -374,7 +421,8 @@ export function generateTransformation(c: VenueConfiguration, objects: VenueObje
 }
 
 function checkConflicts(c: VenueConfiguration, tr: TransformationModel): KineticConflict[] {
-  const moving = tr.assemblies;
+  // The proscenium carriage is the screen itself; proscenium.ts checks its path against the venue.
+  const moving = tr.assemblies.filter((a) => a.kind !== 'proscenium');
   if (!moving.length) return [];
   const pts = new Map(moving.map((a) => [a.id, samplePoints(a.envelope)]));
   const start = Math.min(...moving.map((a) => a.start));
@@ -459,7 +507,7 @@ function checkConflicts(c: VenueConfiguration, tr: TransformationModel): Kinetic
 /** Clear floor at the end of the sequence, on a 0.25 m grid inside the screen clearance. */
 function standingArea(c: VenueConfiguration, tr: TransformationModel) {
   const floor = c.floor.mainFloorElevation;
-  const radius = sphereRadiusAt(c.sphere.radius, floor) - c.seating.screenClearance;
+  const radius = sphereRadiusAt(c.sphere.radius, floor, ringOf(c)) - c.seating.screenClearance;
   const pose = poseAt(tr, tr.duration);
   const cell = 0.25;
   const obstacles: { e: Envelope; d: Vec3 }[] = [];

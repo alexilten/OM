@@ -1,5 +1,5 @@
 /** Stage generator and architectural envelope (subsystems 6 and 8, Round 01 scope). */
-import { mediaBounds, sphereRadiusAt } from './media';
+import { mediaBounds, ringOf, sphereRadiusAt } from './media';
 import type { Issue, Metric, VenueConfiguration, VenueObject, Vec3 } from './types';
 
 export function stageObjects(c: VenueConfiguration): { objects: VenueObject[]; issues: Issue[] } {
@@ -14,7 +14,7 @@ export function stageObjects(c: VenueConfiguration): { objects: VenueObject[]; i
     [-st.width / 2, st.centerY + st.depth / 2],
   ];
   const maxPlan = Math.max(...corners.map(([x, y]) => Math.hypot(x, y)));
-  const limit = sphereRadiusAt(c.sphere.radius, top);
+  const limit = sphereRadiusAt(c.sphere.radius, top, ringOf(c));
   if (maxPlan > limit)
     issues.push({ severity: 'warning', code: 'stage-outside-sphere', message: `Stage corners reach ${(maxPlan - limit).toFixed(2)} m beyond the reference sphere at deck level.`, path: 'stage' });
   return {
@@ -43,7 +43,7 @@ export interface EnvelopeExtents {
 export function envelopeExtents(c: VenueConfiguration): EnvelopeExtents {
   const b = mediaBounds(c.sphere.radius, c.media);
   const R = c.sphere.radius;
-  const half = R + c.envelope.serviceZone;
+  const half = ringOf(c) + R + c.envelope.serviceZone;
   const topZ = R * Math.sin(b.el1) + c.envelope.overheadClearance;
   return { half, floorZ: c.floor.mainFloorElevation, slabBottom: c.floor.mainFloorElevation - c.floor.slabThickness, topZ };
 }

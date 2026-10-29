@@ -9,6 +9,11 @@
  *
  *   P(θ, φ) = (R cosφ sinθ, R cosφ cosθ, R sinφ)
  *
+ * Torus form (Round 10): the screen can be a torus about Z with ring radius a (the tube centre circle
+ * lies in the equator plane at radius a) and tube radius R. Elevation is then measured about the tube
+ * centre, P(θ, φ) = ((a + R cosφ) sinθ, (a + R cosφ) cosθ, R sinφ), and the surface normal is the same
+ * direction (cosφ sinθ, cosφ cosθ, sinφ) as on the sphere. a = 0 is the sphere.
+ *
  * The viewport (Three.js, Y-up) renders engine geometry inside a single group rotated -90° about X,
  * so no engine coordinate is ever rewritten for display, and the CAD export writes engine
  * coordinates unchanged (Rhino is Z-up too).
@@ -28,6 +33,22 @@ export const toDeg = (rad: number) => rad / DEG;
 export function spherePoint(R: number, azimuth: number, elevation: number): Vec3 {
   const c = Math.cos(elevation);
   return [R * c * Math.sin(azimuth), R * c * Math.cos(azimuth), R * Math.sin(elevation)];
+}
+
+/** Point on the screen surface: a torus of ring radius `ring` and tube radius R; ring = 0 is the sphere. */
+export function surfacePoint(R: number, azimuth: number, elevation: number, ring = 0): Vec3 {
+  const rho = ring + R * Math.cos(elevation);
+  return [rho * Math.sin(azimuth), rho * Math.cos(azimuth), R * Math.sin(elevation)];
+}
+
+/** Outward unit normal of the screen surface at (azimuth, elevation), the same for sphere and torus. */
+export const surfaceNormal = (azimuth: number, elevation: number): Vec3 => spherePoint(1, azimuth, elevation);
+
+/** Inverse of surfacePoint: [distance from the tube centre circle, azimuth, elevation]. */
+export function toSurface(p: Vec3, ring = 0): [number, number, number] {
+  if (!ring) return toSpherical(p);
+  const rho = Math.hypot(p[0], p[1]) - ring;
+  return [Math.hypot(rho, p[2]), Math.atan2(p[0], p[1]), Math.atan2(p[2], rho)];
 }
 
 /** Inverse of spherePoint for any non-zero point: [radius, azimuth, elevation]. */

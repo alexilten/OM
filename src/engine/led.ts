@@ -17,8 +17,8 @@
  * can offer alternatives when a product's curvature limit fails.
  */
 import { getLedProduct, LED_PRODUCTS } from '../library/led';
-import { add, cross, dot, normalize, scale, spherePoint, sub, toDeg, toRad } from './coordinates';
-import { mediaBounds, patchArea } from './media';
+import { add, cross, dot, normalize, scale, sub, surfaceNormal, surfacePoint, toDeg, toRad } from './coordinates';
+import { mediaBounds, patchArea, ringOf } from './media';
 import type { BlockDefinition, Frame, Issue, LedProduct, Metric, Vec3, VenueConfiguration, VenueObject } from './types';
 
 export type LedStrategy = 'rings' | 'spherical-tiles';
@@ -133,9 +133,9 @@ const corners = (f: Frame, w: number, h: number) => {
 
 const angleBetween = (a: Vec3, b: Vec3) => toDeg(Math.acos(Math.max(-1, Math.min(1, dot(a, b)))));
 
-function frameAt(Rc: number, az: number, el: number): Frame {
-  const origin = spherePoint(Rc, az, el);
-  const zAxis = scale(origin, -1 / Rc);
+function frameAt(Rc: number, az: number, el: number, ring = 0): Frame {
+  const origin = surfacePoint(Rc, az, el, ring);
+  const zAxis = scale(surfaceNormal(az, el), -1);
   const xAxis: Vec3 = [Math.cos(az), -Math.sin(az), 0];
   return { origin, xAxis, yAxis: cross(zAxis, xAxis), zAxis };
 }
@@ -146,8 +146,8 @@ function limitOf(p: LedProduct): number | undefined {
 }
 
 /** Hinge angle between ring neighbours (angle between their normals), degrees. */
-function hingeAngle(Rc: number, el: number, w: number, h: number, g: number): number {
-  const dAz = ringPitch(Rc, el, w, h, g);
+function hingeAngle(Rc: number, el: number, w: number, h: number, g: number, ring = 0): number {
+  const dAz = ringPitch(Rc, el, w, h, g, ring);
   const c = Math.cos(el) ** 2 * Math.cos(dAz) + Math.sin(el) ** 2;
   return toDeg(Math.acos(Math.max(-1, Math.min(1, c))));
 }
@@ -159,11 +159,12 @@ export function minRadiusFor(p: LedProduct, c: VenueConfiguration): number {
   const L = limitOf(p);
   if (L === undefined) return 0;
   // The ring taper widens the pitch towards the poles, so the highest ring needs the largest hinge.
-  const b = mediaBounds(c.sphere.radius, c.media);
+  const ring = ringOf(c);
+  const b = mediaBounds(c.sphere.radius, c.media, ring);
   const el = Math.min(Math.max(Math.abs(b.el0), Math.abs(b.el1)), toRad(89));
   const w = p.cabinetWidth.value;
   const h = p.cabinetHeight.value;
-  const fits = (R: number) => hingeAngle(R, el, w, h, c.led.jointGap) <= L;
+  const fits = (R: number) => hingeAngle(R, el, w, h, c.led.jointGap, ring) <= L;
   let hi = 1000;
   if (!fits(hi)) return Infinity;
   let lo = Math.max(w, h);
@@ -182,10 +183,10 @@ export function minRadiusFor(p: LedProduct, c: VenueConfiguration): number {
  * wedge towards the equator, as a built faceted dome does.
  *
  * Closed form: with neighbours at ±a, the pole-side corners are `g` apart when
- * K·sin a − (w/2)·cos a = g/2, where K = Rc·cos(el) − (h/2)·|sin(el)|.
+ * K·sin a − (w/2)·cos a = g/2, where K = ring + Rc·cos(el) − (h/2)·|sin(el)| (ring = 0 on a sphere).
  */
-function ringPitch(Rc: number, el: number, w: number, h: number, g: number): number {
-  const K = Rc * Math.cos(el) - (h / 2) * Math.abs(Math.sin(el));
+function ringPitch(Rc: number, el: number, w: number, h: number, g: number, ring = 0): number {
+  const K = ring + Rc * Math.cos(el) - (h / 2) * Math.abs(Math.sin(el));
   const r = Math.hypot(K, w / 2);
   return 2 * (Math.atan2(w / 2, K) + Math.asin(Math.min(1, g / (2 * r))));
 }
@@ -197,8 +198,8 @@ interface Ring {
 }
 
 /** Azimuths of one ring at elevation `el`, centred on the screen's azimuth span. */
-function ringAt(Rc: number, el: number, w: number, h: number, g: number, az0: number, az1: number): Ring {
-  const dAz = ringPitch(Rc, el, w, h, g);
+function ringAt(Rc: number, el: number, w: number, h: number, g: number, az0: number, az1: number, ring = 0): Ring {
+  const dAz = ringPitch(Rc, el, w, h, g, ring);
   const k = Math.floor((az1 - az0) / dAz + 1e-9);
   const mid = (az0 + az1) / 2;
   return { el, dAz, azs: Array.from({ length: Math.max(0, k) }, (_, i) => mid + (i - (k - 1) / 2) * dAz) };
@@ -212,7 +213,7 @@ const nearestIn = (ring: Ring, az: number) => Math.max(0, Math.min(ring.azs.leng
  * unit below it, and each top corner of the lower ring against the unit above it (the minimum
  * opening along two straight edges is always at one of these corners). Scalar maths; this is the hot loop.
  */
-function ringsClear(Rc: number, w: number, h: number, g: number, lower: Ring, upper: Ring): boolean {
+function ringsClear(Rc: number, w: number, h: number, g: number, lower: Ring, upper: Ring, ring = 0): boolean {
   const test = (from: Ring, sy: number, to: Ring) => {
     const ce = Math.cos(from.el);
     const se = Math.sin(from.el);
@@ -223,14 +224,14 @@ function ringsClear(Rc: number, w: number, h: number, g: number, lower: Ring, up
       const sa = Math.sin(az);
       for (const sx of [-1, 1]) {
         // Corner = origin + sx·x·w/2 + sy·y·h/2, with x = (ca, −sa, 0) and y = (−se·sa, −se·ca, ce).
-        const px = Rc * ce * sa + (sx * w * ca) / 2 - (sy * h * se * sa) / 2;
-        const py = Rc * ce * ca - (sx * w * sa) / 2 - (sy * h * se * ca) / 2;
+        const px = (ring + Rc * ce) * sa + (sx * w * ca) / 2 - (sy * h * se * sa) / 2;
+        const py = (ring + Rc * ce) * ca - (sx * w * sa) / 2 - (sy * h * se * ca) / 2;
         const pz = Rc * se + (sy * h * ce) / 2;
         const taz = to.azs[nearestIn(to, Math.atan2(px, py))];
         const tc = Math.cos(taz);
         const tsn = Math.sin(taz);
-        const dx = px - Rc * te * tsn;
-        const dy = py - Rc * te * tc;
+        const dx = px - (ring + Rc * te) * tsn;
+        const dy = py - (ring + Rc * te) * tc;
         const dz = pz - Rc * ts;
         if (Math.abs(dx * tc - dy * tsn) > w / 2 + 1e-9) continue; // over an opening at the row end
         const ly = -dx * ts * tsn - dy * ts * tc + dz * te;
@@ -251,7 +252,8 @@ function panelizeRings(c: VenueConfiguration, p: LedProduct): Panelization {
   // stand-off so the face straddles the sphere and the worst deviation halves.
   const standoff = Math.sqrt(R * R + (w / 2) ** 2 + (h / 2) ** 2) - R;
   const Rc = c.led.placement === 'balanced' ? R - standoff / 2 : R;
-  const b = mediaBounds(R, c.media);
+  const ring = ringOf(c);
+  const b = mediaBounds(R, c.media, ring);
   const limit = limitOf(p);
   const minBend = p.family === '03-flexible' ? p.minBendRadius?.value : undefined;
   const dEl0 = 2 * Math.atan((h + g) / (2 * Rc));
@@ -266,26 +268,26 @@ function panelizeRings(c: VenueConfiguration, p: LedProduct): Panelization {
   let sideStrip = 0;
   let lastEl = el;
   while (rows.length < maxRows && el + dEl0 / 2 <= b.el1 + 1e-9) {
-    const ring = ringAt(Rc, el, w, h, g, b.az0, b.az1);
-    const { dAz, azs } = ring;
+    const rg = ringAt(Rc, el, w, h, g, b.az0, b.az1, ring);
+    const { dAz, azs } = rg;
     if (!azs.length) break;
-    sideStrip = Math.max(sideStrip, (((b.az1 - b.az0) - azs.length * dAz) / 2) * R * Math.cos(el));
+    sideStrip = Math.max(sideStrip, (((b.az1 - b.az0) - azs.length * dAz) / 2) * (ring + R * Math.cos(el)));
     const row: LedUnit[] = azs.map((az, i) => {
-      const frame = frameAt(Rc, az, el);
+      const frame = frameAt(Rc, az, el, ring);
       const cs = corners(frame, w, h);
       let deviation = Math.abs(Rc - R);
-      for (const q of [cs.bl, cs.br, cs.tl, cs.tr]) deviation = Math.max(deviation, Math.abs(Math.hypot(q[0], q[1], q[2]) - R));
+      for (const q of [cs.bl, cs.br, cs.tl, cs.tr]) deviation = Math.max(deviation, Math.abs(Math.hypot(Math.hypot(q[0], q[1]) - ring, q[2]) - R));
       return { id: `led.r${String(rows.length).padStart(2, '0')}.c${String(i).padStart(3, '0')}`, row: rows.length, col: i, az, el, frame, deviation, gap: 0, overlap: 0, step: 0, jointH: 0, jointV: 0, curvatureOk: true };
     });
     rows.push(row);
-    rings.push(ring);
+    rings.push(rg);
     lastEl = el;
     let lo = el;
     let hi = el + 2 * dEl0;
     // 20 halvings of 2·dEl0 resolve the elevation to well under a micrometre of arc.
     for (let i = 0; i < 20; i++) {
       const mid = (lo + hi) / 2;
-      if (ringsClear(Rc, w, h, g, ring, ringAt(Rc, mid, w, h, g, b.az0, b.az1))) hi = mid;
+      if (ringsClear(Rc, w, h, g, rg, ringAt(Rc, mid, w, h, g, b.az0, b.az1, ring), ring)) hi = mid;
       else lo = mid;
     }
     el = hi;
@@ -359,7 +361,8 @@ function panelizeRings(c: VenueConfiguration, p: LedProduct): Panelization {
 }
 
 function panelizeTiles(c: VenueConfiguration, p: LedProduct): Panelization {
-  const b = mediaBounds(c.sphere.radius, c.media);
+  const ring = ringOf(c);
+  const b = mediaBounds(c.sphere.radius, c.media, ring);
   const R = b.R;
   const w = p.cabinetWidth.value;
   const h = p.cabinetHeight.value;
@@ -382,9 +385,9 @@ function panelizeTiles(c: VenueConfiguration, p: LedProduct): Panelization {
     const ea = el0 + j * dEl;
     const eb = ea + dEl;
     const em = (ea + eb) / 2;
-    const rho = R * Math.cos(em);
+    const rho = ring + R * Math.cos(em);
     // Size each row from its widest (equator-side) edge so no tile exceeds the nominal width.
-    const wide = R * Math.cos(ea <= 0 && eb >= 0 ? 0 : Math.min(Math.abs(ea), Math.abs(eb)));
+    const wide = ring + R * Math.cos(ea <= 0 && eb >= 0 ? 0 : Math.min(Math.abs(ea), Math.abs(eb)));
     const k = Math.max(1, Math.ceil(((b.az1 - b.az0) * wide) / (w + g) - 1e-9));
     const dAz = (b.az1 - b.az0) / k;
     const gAz = rho > 1e-9 ? Math.min(dAz / 2, g / rho) : 0;
@@ -394,14 +397,14 @@ function panelizeTiles(c: VenueConfiguration, p: LedProduct): Panelization {
     // Tile edges are latitude arcs, so a tile is widest on the edge nearest the equator.
     const near = pe0 <= 0 && pe1 >= 0 ? 0 : Math.min(Math.abs(pe0), Math.abs(pe1));
     const far = Math.max(Math.abs(pe0), Math.abs(pe1));
-    range.wMin = Math.min(range.wMin, (dAz - gAz) * R * Math.cos(far));
-    range.wMax = Math.max(range.wMax, (dAz - gAz) * R * Math.cos(near));
+    range.wMin = Math.min(range.wMin, (dAz - gAz) * (ring + R * Math.cos(far)));
+    range.wMax = Math.max(range.wMax, (dAz - gAz) * (ring + R * Math.cos(near)));
     range.hMin = Math.min(range.hMin, (pe1 - pe0) * R);
     range.hMax = Math.max(range.hMax, (pe1 - pe0) * R);
     for (let i = 0; i < k; i++) {
       const az0 = b.az0 + i * dAz + gAz / 2;
       const az1 = az0 + dAz - gAz;
-      area += R * R * (az1 - az0) * (Math.sin(pe1) - Math.sin(pe0));
+      area += R * (az1 - az0) * (ring * (pe1 - pe0) + R * (Math.sin(pe1) - Math.sin(pe0)));
       units.push({
         id: `led.r${String(j).padStart(2, '0')}.c${String(i).padStart(3, '0')}`,
         row: j,
@@ -422,7 +425,7 @@ function panelizeTiles(c: VenueConfiguration, p: LedProduct): Panelization {
   // Widest row sets the horizontal resolution; rows × tile height sets the vertical.
   const widestRow = Math.max(0, ...Array.from({ length: n }, (_, j) => {
     const em = el0 + (j + 0.5) * dEl;
-    return (b.az1 - b.az0) * R * Math.cos(em);
+    return (b.az1 - b.az0) * (ring + R * Math.cos(em));
   }));
   const resH = widestRow / p.pixelPitch.value;
   const resV = ((el1 - el0) * R) / p.pixelPitch.value;
@@ -529,7 +532,7 @@ export function generateLed(c: VenueConfiguration): LedResult {
     layer,
     category: tiles ? 'LEDTile' : p.family === '03-flexible' ? 'LEDModule' : 'LEDCabinet',
     geometry: tiles
-      ? { kind: 'spherePatch', radius: c.sphere.radius, azimuth0: u.patch!.az0, azimuth1: u.patch!.az1, elevation0: u.patch!.el0, elevation1: u.patch!.el1 }
+      ? { kind: 'spherePatch', radius: c.sphere.radius, azimuth0: u.patch!.az0, azimuth1: u.patch!.az1, elevation0: u.patch!.el0, elevation1: u.patch!.el1, ...(ringOf(c) ? { ring: ringOf(c) } : {}) }
       : { kind: 'blockInstance', blockId: block!.id, frame: u.frame! },
     parentAssembly: 'led.system',
     operatingState: 'all',

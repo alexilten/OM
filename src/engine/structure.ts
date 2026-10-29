@@ -10,13 +10,16 @@
  */
 import { getLedProduct } from '../library/led';
 import { getStructureSystem, SHIPPING, type StructureSystem } from '../library/catalog';
-import { facingFrame, spherePoint, toRad } from './coordinates';
-import { mediaBounds } from './media';
+import { facingFrame, sub, surfaceNormal, surfacePoint, toRad } from './coordinates';
+import { mediaBounds, ringOf } from './media';
+import { prosceniumSector } from './proscenium';
 import type { BlockDefinition, Issue, Metric, VenueConfiguration, VenueObject, Vec3 } from './types';
 import type { LedSummary } from './led';
 
 export interface StructureLayout {
   sys: StructureSystem;
+  /** Torus ring radius (0 = sphere); the radii below are then tube radii about the ring. */
+  ring: number;
   /** Radius of the ribs' front face, rib centreline, ring girder centreline and the structure's back. */
   front: number;
   ribR: number;
@@ -99,8 +102,9 @@ export function structureLayout(c: VenueConfiguration): StructureLayout | undefi
   const sys = getStructureSystem(st.system);
   if (!st.enabled || !sys) return undefined;
   const R = c.sphere.radius;
+  const ring = ringOf(c);
   const f = c.floor.mainFloorElevation;
-  const b = mediaBounds(R, c.media);
+  const b = mediaBounds(R, c.media, ring);
   const ledDepth = getLedProduct(c.led.productId)?.cabinetDepth.value ?? 0.1;
   const front = R + ledDepth + st.mountGap;
   const ribR = front + sys.ribDepth / 2;
@@ -115,10 +119,11 @@ export function structureLayout(c: VenueConfiguration): StructureLayout | undefi
   for (let j = 0; j <= n; j++) rings.push({ el: elLow + ((elTop - elLow) * j) / n, kind: j === n ? 'top' : j === 0 && !rings.length ? 'base' : 'girder' });
   const span = b.az1 - b.az0;
   const full = span >= 2 * Math.PI - 1e-6;
-  const nB = Math.max(1, Math.ceil((ribR * span) / st.ribSpacing));
+  // Rib spacing is measured on the equator (the torus form's equator is ring + ribR from the axis).
+  const nB = Math.max(1, Math.ceil(((ring + ribR) * span) / st.ribSpacing));
   const ribAz = Array.from({ length: full ? nB : nB + 1 }, (_, i) => b.az0 + (span * i) / nB);
   const bays = Array.from({ length: nB }, (_, i) => [ribAz[i], i + 1 < ribAz.length ? ribAz[i + 1] : ribAz[0] + 2 * Math.PI, i, (i + 1) % ribAz.length] as [number, number, number, number]);
-  return { sys, front, ribR, ringR, back, az0: b.az0, az1: b.az1, full, ribAz, bays, elFoot, rings, elTop, crown: b.el1 < MAX_TOP };
+  return { sys, ring, front, ribR, ringR, back, az0: b.az0, az1: b.az1, full, ribAz, bays, elFoot, rings, elTop, crown: b.el1 < MAX_TOP };
 }
 
 /** Bay containing an azimuth (or undefined outside the structure). */
@@ -152,19 +157,30 @@ export function generateStructure(c: VenueConfiguration, l: StructureLayout, pic
   const STRUCT = '01_MEDIA/LED_Structure';
   const MOUNT = '01_MEDIA/LED_Mounting';
 
+  const ringGeo = l.ring ? { ring: l.ring } : {};
   const addSegment = (s: Omit<Segment, 'shipping'>, depth: number, width: number) => {
     const seg = { ...s, shipping: shippingClass(s.length, s.chord, s.sagitta, depth, width) };
     segments.push(seg);
     return seg;
   };
 
+  // Retractable proscenium: ribs inside the opening stop on a portal header at the opening's top, and
+  // ring girders below the header skip the bays the carriage slides through.
+  const prosc = prosceniumSector(c);
+  const headerEl = prosc && prosc.el1 < l.elTop - 1e-6 ? prosc.el1 : undefined;
+  const inOpening = (az: number) => !!prosc && az > prosc.az0 + 1e-9 && az < prosc.az1 - 1e-9;
+  const bayInOpening = (b: [number, number, number, number]) => !!prosc && Math.min(b[1], prosc.az1) - Math.max(b[0], prosc.az0) > 1e-9;
+  const below = (el: number) => prosc !== undefined && el < (headerEl ?? Infinity) - 1e-9;
+
   // Ribs: one meridian arc per rib, split into equal shippable segments.
-  const ribAngle = l.elTop - l.elFoot;
-  const ribSegs = Math.max(1, Math.ceil((l.ribR * ribAngle) / st.maxSegment));
   l.ribAz.forEach((az, i) => {
+    if (inOpening(az) && headerEl === undefined) return;
+    const foot = inOpening(az) ? headerEl! : l.elFoot;
+    const ribAngle = l.elTop - foot;
+    const ribSegs = Math.max(1, Math.ceil((l.ribR * ribAngle) / st.maxSegment));
     for (let s = 0; s < ribSegs; s++) {
-      const e0 = l.elFoot + (ribAngle * s) / ribSegs;
-      const e1 = l.elFoot + (ribAngle * (s + 1)) / ribSegs;
+      const e0 = foot + (ribAngle * s) / ribSegs;
+      const e1 = foot + (ribAngle * (s + 1)) / ribSegs;
       const a = arcProps(l.ribR, e1 - e0);
       const weight = a.length * sys.ribKgPerM.value;
       const mark = `R${String(i + 1).padStart(2, '0')}-${s + 1}`;
@@ -175,7 +191,7 @@ export function generateStructure(c: VenueConfiguration, l: StructureLayout, pic
         name: `Rib_${mark}`,
         layer: STRUCT,
         category: 'Rib',
-        geometry: { kind: 'meridianArc', radius: l.ribR, azimuth: az, elevation0: e0, elevation1: e1 },
+        geometry: { kind: 'meridianArc', radius: l.ribR, azimuth: az, elevation0: e0, elevation1: e1, ...ringGeo },
         operatingState: 'all',
         metadata: { mark, rib: i, segment: s, length_m: +a.length.toFixed(4), chord_m: +a.chord.toFixed(4), sagitta_m: +a.sagitta.toFixed(4), weight_kg: +weight.toFixed(1), shipping: seg.shipping, section: sys.name, status: 'conceptual' },
       });
@@ -183,18 +199,27 @@ export function generateStructure(c: VenueConfiguration, l: StructureLayout, pic
   });
 
   // Ring girders: latitude arcs on the outer face of the ribs, grouped into segments of whole bays.
+  // Rings below the proscenium header break into runs either side of the opening.
   let ringCount = 0;
-  l.rings.forEach((ring, j) => {
-    const plan = l.ringR * Math.cos(ring.el);
+  const header = headerEl === undefined ? [] : [{ el: headerEl, kind: 'header' as const }];
+  [...l.rings, ...header].forEach((ring, j) => {
+    const plan = l.ring + l.ringR * Math.cos(ring.el);
     const bayAngle = l.bays[0][1] - l.bays[0][0];
     const perSeg = Math.max(1, Math.floor(st.maxSegment / Math.max(1e-6, plan * bayAngle)));
     ringCount++;
-    for (let s = 0; s * perSeg < l.bays.length; s++) {
-      const first = l.bays[s * perSeg];
-      const last = l.bays[Math.min(l.bays.length, (s + 1) * perSeg) - 1];
+    const runs: (typeof l.bays)[] = [[]];
+    for (const bay of l.bays) {
+      const keep = ring.kind === 'header' ? bayInOpening(bay) : !(below(ring.el) && bayInOpening(bay));
+      if (keep) runs[runs.length - 1].push(bay);
+      else if (runs[runs.length - 1].length) runs.push([]);
+    }
+    const chunks = runs.filter((run) => run.length).flatMap((run) => Array.from({ length: Math.ceil(run.length / perSeg) }, (_, k) => run.slice(k * perSeg, (k + 1) * perSeg)));
+    chunks.forEach((chunk, s) => {
+      const first = chunk[0];
+      const last = chunk[chunk.length - 1];
       const a = arcProps(plan, last[1] - first[0]);
       const weight = a.length * sys.ringKgPerM.value;
-      const mark = `G${String(j + 1).padStart(2, '0')}-${s + 1}`;
+      const mark = `${ring.kind === 'header' ? 'PH' : 'G'}${String(j + 1).padStart(2, '0')}-${s + 1}`;
       const seg = addSegment({ mark, member: 'ring', ...a, weight }, sys.ringDepth, sys.ringWidth);
       // Half of each ring segment's weight lands on the ribs at its ends.
       ribLoad[first[2]] += weight / 2;
@@ -204,11 +229,11 @@ export function generateStructure(c: VenueConfiguration, l: StructureLayout, pic
         name: `Ring_${mark}`,
         layer: STRUCT,
         category: ring.kind === 'base' ? 'BaseRing' : ring.kind === 'top' ? 'TopRing' : 'RingGirder',
-        geometry: { kind: 'latitudeArc', radius: l.ringR, elevation: ring.el, azimuth0: first[0], azimuth1: last[1] },
+        geometry: { kind: 'latitudeArc', radius: l.ringR, elevation: ring.el, azimuth0: first[0], azimuth1: last[1], ...ringGeo },
         operatingState: 'all',
         metadata: { mark, ring: j, kind: ring.kind, length_m: +a.length.toFixed(4), chord_m: +a.chord.toFixed(4), sagitta_m: +a.sagitta.toFixed(4), weight_kg: +weight.toFixed(1), shipping: seg.shipping, status: 'conceptual' },
       });
-    }
+    });
   });
 
   // Node brackets at every rib × ring crossing, and base plates under every rib.
@@ -229,13 +254,15 @@ export function generateStructure(c: VenueConfiguration, l: StructureLayout, pic
   const nodeR = l.front + (sys.ribDepth + sys.ringDepth) / 2;
   let nodes = 0;
   l.ribAz.forEach((az, i) => {
-    l.rings.forEach((ring, j) => {
-      const p = spherePoint(nodeR, az, ring.el);
-      objects.push({ id: `struct.node.${i}.${j}`, name: `Node_R${i + 1}_G${j + 1}`, layer: MOUNT, category: 'StructureNode', geometry: { kind: 'blockInstance', blockId: nodeBlock.id, frame: facingFrame(p, [0, 0, 0]) }, operatingState: 'all', metadata: { rib: i, ring: j, weight_kg: sys.nodeKg.value, status: 'conceptual' } });
+    [...l.rings, ...header].forEach((ring, j) => {
+      // Inside the proscenium opening only the header and the rings above it carry nodes.
+      if (inOpening(az) ? below(ring.el) : ring.kind === 'header') return;
+      const p = surfacePoint(nodeR, az, ring.el, l.ring);
+      objects.push({ id: `struct.node.${i}.${j}`, name: `Node_R${i + 1}_G${j + 1}`, layer: MOUNT, category: 'StructureNode', geometry: { kind: 'blockInstance', blockId: nodeBlock.id, frame: facingFrame(p, sub(p, surfaceNormal(az, ring.el))) }, operatingState: 'all', metadata: { rib: i, ring: j, weight_kg: sys.nodeKg.value, status: 'conceptual' } });
       ribLoad[i] += sys.nodeKg.value;
       nodes++;
     });
-    const foot = spherePoint(l.ribR, az, l.elFoot);
+    const foot = surfacePoint(l.ribR, az, l.elFoot, l.ring);
     const base: Vec3 = [foot[0], foot[1], f];
     objects.push({ id: `struct.base.${i}`, name: `Base_R${i + 1}`, layer: MOUNT, category: 'BasePlate', geometry: { kind: 'blockInstance', blockId: baseBlock.id, frame: facingFrame(base, [0, 0, f]) }, operatingState: 'all', metadata: { rib: i, weight_kg: sys.baseKg.value, status: 'conceptual' } });
     ribLoad[i] += sys.baseKg.value;
@@ -248,12 +275,12 @@ export function generateStructure(c: VenueConfiguration, l: StructureLayout, pic
   for (let i = 0; i < nRib; i++) ribLoad[i] += ledLoad / nRib;
 
   // Pick-ups: every load the systems hang is carried to named ribs.
-  const media = mediaBounds(R, c.media);
+  const media = mediaBounds(R, c.media, l.ring);
   const pickPoints: PickPoint[] = [];
   const pickBeams = new Map<string, { bay: number; el: number }>();
   const crownBeams = new Map<string, number>();
   const topRing = l.rings[l.rings.length - 1];
-  const rInner = l.ringR * Math.cos(topRing.el);
+  const rInner = l.ring + l.ringR * Math.cos(topRing.el);
   // The crown grid sits on the top ring, raised on posts if something hangs higher (zenith arrays, halo hoists).
   const inOculus = (p: PickRequest) => l.crown && p.kind === 'hoist' && Math.hypot(p.position[0], p.position[1]) < rInner && p.position[2] > l.front * Math.sin(l.elTop) - 1;
   const crownZ = Math.max(l.ringR * Math.sin(topRing.el) + sys.ringDepth, ...picks.filter(inOculus).map((p) => p.position[2] + 0.3));
@@ -270,9 +297,10 @@ export function generateStructure(c: VenueConfiguration, l: StructureLayout, pic
       pickPoints.push({ id: p.id, source: p.source, load: p.load, carrier: ribs.length ? 'ring' : 'unsupported', position: p.position, ribs, penetratesScreen: false });
       continue;
     }
-    const r = Math.hypot(x, y);
-    const zHit = r < l.front ? Math.sqrt(l.front * l.front - r * r) : -Infinity;
-    const el = Math.asin(Math.max(-1, Math.min(1, zHit / l.front)));
+    // Vertical line up from the pick to the ribs' front surface (r is measured from the tube centre circle).
+    const r = Math.hypot(x, y) - l.ring;
+    const zHit = Math.abs(r) < l.front ? Math.sqrt(l.front * l.front - r * r) : -Infinity;
+    const el = Math.atan2(zHit, r);
     let carrier: PickPoint['carrier'] = 'unsupported';
     let top: Vec3 | undefined;
     let ribs: number[] = [];
@@ -299,13 +327,13 @@ export function generateStructure(c: VenueConfiguration, l: StructureLayout, pic
   }
   [...pickBeams].forEach(([key, { bay, el }], k) => {
     const [a0, a1] = l.bays[bay];
-    const a = arcProps(l.ribR * Math.cos(el), a1 - a0);
+    const a = arcProps(l.ring + l.ribR * Math.cos(el), a1 - a0);
     const weight = a.length * sys.ringKgPerM.value;
     ribLoad[l.bays[bay][2]] += weight / 2;
     ribLoad[l.bays[bay][3]] += weight / 2;
     const mark = `P${String(k + 1).padStart(2, '0')}`;
     addSegment({ mark, member: 'pick-beam', ...a, weight }, sys.ringDepth, sys.ringWidth);
-    objects.push({ id: `struct.pickbeam.${key.replace(/[^0-9]+/g, '_')}`, name: `PickBeam_${mark}`, layer: STRUCT, category: 'PickBeam', geometry: { kind: 'latitudeArc', radius: l.ribR, elevation: el, azimuth0: a0, azimuth1: a1 }, operatingState: 'all', metadata: { mark, bay, weight_kg: +weight.toFixed(1), status: 'conceptual' } });
+    objects.push({ id: `struct.pickbeam.${key.replace(/[^0-9]+/g, '_')}`, name: `PickBeam_${mark}`, layer: STRUCT, category: 'PickBeam', geometry: { kind: 'latitudeArc', radius: l.ribR, elevation: el, azimuth0: a0, azimuth1: a1, ...ringGeo }, operatingState: 'all', metadata: { mark, bay, weight_kg: +weight.toFixed(1), status: 'conceptual' } });
   });
   [...crownBeams.values()].forEach((az, k) => {
     const r0 = rInner;
@@ -325,13 +353,13 @@ export function generateStructure(c: VenueConfiguration, l: StructureLayout, pic
   if (st.walkways) {
     const girders = l.rings.map((ring, j) => ({ ...ring, j })).filter((ring) => ring.kind === 'girder' && l.back * Math.sin(ring.el) >= f + 2.4);
     girders.filter((_, k) => k % 2 === 0).forEach((ring) => {
-      const inner = l.back * Math.cos(ring.el);
+      const inner = l.ring + l.back * Math.cos(ring.el);
       const z = l.back * Math.sin(ring.el);
       const outer = inner + 0.6;
       const span = l.full ? 2 * Math.PI : l.az1 - l.az0;
       walkwayLength += ((inner + outer) / 2) * span;
-      if (Math.hypot(outer, z) > R + c.envelope.serviceZone + 1e-9)
-        issues.push({ severity: 'warning', code: 'walkway-service-zone', message: `The service walkway at ${z.toFixed(1)} m reaches ${(Math.hypot(outer, z) - R).toFixed(2)} m behind the screen; the service zone is ${c.envelope.serviceZone.toFixed(2)} m.`, path: 'envelope.serviceZone' });
+      if (Math.hypot(outer - l.ring, z) > R + c.envelope.serviceZone + 1e-9)
+        issues.push({ severity: 'warning', code: 'walkway-service-zone', message: `The service walkway at ${z.toFixed(1)} m reaches ${(Math.hypot(outer - l.ring, z) - R).toFixed(2)} m behind the screen; the service zone is ${c.envelope.serviceZone.toFixed(2)} m.`, path: 'envelope.serviceZone' });
       // A full ring is drawn as two halves (a closed annular sector has no seam to extrude from).
       const parts: [number, number][] = l.full ? [[0, Math.PI], [Math.PI, 2 * Math.PI]] : [[Math.PI - l.az1, Math.PI - l.az0]];
       parts.forEach(([angle0, angle1], h) =>

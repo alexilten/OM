@@ -69,6 +69,17 @@ def main(path):
     manifest = json.loads(s["om.manifest"])
     config = json.loads(s["om.configuration"])
     R = config["sphere"]["radius"]
+    # Torus form: ring radius of the tube centre circle (0 = sphere). Distances to the screen are taken
+    # from that circle; inside the ring opening only the height counts.
+    ring = manifest.get("ringRadius", 0) or 0
+
+    def tube(x, y, z):
+        return math.hypot(max(math.hypot(x, y) - ring, 0.0), z)
+
+    def pose(o):
+        """Offset of a moved object in the standing state (0, 0, 0 when it has not moved)."""
+        v = o.Attributes.GetUserString("om.pose_offset") or o.Attributes.GetUserString("om.carriage_offset_m")
+        return tuple(float(x) for x in v.split(",")) if v else (0.0, 0.0, 0.0)
 
     print("\nFile")
     rep.check(model.Settings.ModelUnitSystem == r.UnitSystem.Meters, "units are metres", str(model.Settings.ModelUnitSystem))
@@ -110,7 +121,9 @@ def main(path):
     origin = by_id["ref.origin"].Geometry.Location
     rep.check(abs(origin.X) + abs(origin.Y) + abs(origin.Z) < TOL, "World_Origin at (0, 0, 0)")
     lo, hi = bbox(by_id["ref.sphere"].Geometry)
-    rep.check(all(abs(v + R) < 1e-6 for v in lo) and all(abs(v - R) < 1e-6 for v in hi), f"reference sphere bbox = ±{R} m (centred on origin)")
+    ext = (ring + R, ring + R, R)
+    rep.check(all(abs(v + e) < 1e-6 for v, e in zip(lo, ext)) and all(abs(v - e) < 1e-6 for v, e in zip(hi, ext)),
+              f"reference {'torus' if ring else 'sphere'} bbox = ±{ring + R} × ±{R} m (centred on origin)" if ring else f"reference sphere bbox = ±{R} m (centred on origin)")
 
     print("\nMedia surface (exact sphere check)")
     media = by_id["media.ideal"].Geometry
@@ -127,10 +140,11 @@ def main(path):
     for i in range(n + 1):
         for j in range(n + 1):
             p = srf.PointAt(du.T0 + (du.T1 - du.T0) * i / n, dv.T0 + (dv.T1 - dv.T0) * j / n)
-            worst = max(worst, abs(math.sqrt(p.X ** 2 + p.Y ** 2 + p.Z ** 2) - R))
-    rep.check(worst < 1e-9 * R, f"{(n + 1) ** 2} sampled points lie on the sphere", f"max |r - R| = {worst:.2e} m")
+            worst = max(worst, abs(tube(p.X, p.Y, p.Z) - R))
+    rep.check(worst < 1e-9 * R, f"{(n + 1) ** 2} sampled points lie on the {'torus' if ring else 'sphere'}", f"max |r - R| = {worst:.2e} m")
     corner = srf.PointAt(du.T0, dv.T0)
-    exp = (R * math.cos(m["elevation0"]) * math.sin(m["azimuth0"]), R * math.cos(m["elevation0"]) * math.cos(m["azimuth0"]), R * math.sin(m["elevation0"]))
+    rho0 = ring + R * math.cos(m["elevation0"])
+    exp = (rho0 * math.sin(m["azimuth0"]), rho0 * math.cos(m["azimuth0"]), R * math.sin(m["elevation0"]))
     rep.check(math.dist((corner.X, corner.Y, corner.Z), exp) < 1e-9, "lower-left corner at P(θ0, φ0)")
 
     print("\nCoordinates and dimensions")
@@ -163,9 +177,11 @@ def main(path):
         return float(v) if v else floor
     bad = [o.Attributes.Name for o in tiers if abs(bbox(o.Geometry)[1][2] - pose_dz(o) - float(o.Attributes.GetUserString("om.tier_top_z"))) > 1e-4 or abs(bbox(o.Geometry)[0][2] - pose_dz(o) - tier_bottom(o)) > 1e-4]
     rep.check(tiers and not bad, f"{len(tiers)} tier platforms/decks span their stated bottom → tier top", ", ".join(bad))
-    half = R + config["envelope"]["serviceZone"]
+    half = ring + R + config["envelope"]["serviceZone"]
     site = {"BuildingEnvelope", "Column", "Circulation", "SafetyVolume"}  # analysis volumes may extend past the venue
-    outside = [o.Attributes.Name for o in top if o.Attributes.GetUserString("om.category") not in site and any(abs(x) > half + 1e-6 or abs(y) > half + 1e-6 for x, y, _ in exact_points(o.Geometry))]
+    # The opened proscenium carriage leaves the envelope by design (it needs a building pocket).
+    on_carriage = lambda o: (o.Attributes.GetUserString("om.moved_by") or o.Attributes.GetUserString("om.assembly") or "").startswith("prosc") or o.Attributes.GetUserString("om.carriage_offset_m")
+    outside = [o.Attributes.Name for o in top if o.Attributes.GetUserString("om.category") not in site and not on_carriage(o) and any(abs(x) > half + 1e-6 or abs(y) > half + 1e-6 for x, y, _ in exact_points(o.Geometry))]
     rep.check(not outside, f"all objects inside the {2*half:.1f} m design envelope (plan, exact vertices)", ", ".join(outside[:5]))
 
     led = manifest.get("led")
@@ -193,13 +209,14 @@ def main(path):
                           "unit block matches the product's true size", f"{(hi[0]-lo[0])*1000:.1f} × {(hi[1]-lo[1])*1000:.1f} × {(hi[2]-lo[2])*1000:.1f} mm")
             # Every front-face corner within the reported deviation of the sphere.
             worst = 0.0
-            for g in refs:
-                x = g.Xform
+            for o in units:
+                x = o.Geometry.Xform
+                d = pose(o)
                 for sx in (-1, 1):
                     for sy in (-1, 1):
                         lx, ly = sx * led["unit"]["w"] / 2, sy * led["unit"]["h"] / 2
-                        p = (x.M00 * lx + x.M01 * ly + x.M03, x.M10 * lx + x.M11 * ly + x.M13, x.M20 * lx + x.M21 * ly + x.M23)
-                        worst = max(worst, abs(math.dist(p, (0, 0, 0)) - R))
+                        p = (x.M00 * lx + x.M01 * ly + x.M03 - d[0], x.M10 * lx + x.M11 * ly + x.M13 - d[1], x.M20 * lx + x.M21 * ly + x.M23 - d[2])
+                        worst = max(worst, abs(tube(*p) - R))
             rep.check(abs(worst - led["maxDeviation"]) < 1e-6, "face corners deviate from the sphere by the reported maximum", f"{worst*1000:.2f} mm")
         else:
             worst = 0.0
@@ -209,10 +226,11 @@ def main(path):
                     worst = float("inf")
                     break
                 du, dv = srf.Domain(0), srf.Domain(1)
+                d = pose(o)
                 for i in range(3):
                     for j in range(3):
                         p = srf.PointAt(du.T0 + (du.T1 - du.T0) * i / 2, dv.T0 + (dv.T1 - dv.T0) * j / 2)
-                        worst = max(worst, abs(math.dist((p.X, p.Y, p.Z), (0, 0, 0)) - R))
+                        worst = max(worst, abs(tube(p.X - d[0], p.Y - d[1], p.Z - d[2]) - R))
             rep.check(worst < 1e-9 * R, "every tile is an exact sphere patch", f"max |r - R| = {worst:.2e} m")
             types = {o.Attributes.GetUserString("om.tile_type") for o in units}
             rep.check(len(types) == led["unitTypes"], f"{led['unitTypes']} tile types", f"found {len(types)}")
@@ -256,7 +274,7 @@ def main(path):
         cols = [o for o in top if o.Attributes.GetUserString("om.category") == "Column"]
         rep.check(len(cols) == bld["columns"], f"{bld['columns']} columns", f"found {len(cols)}")
         R = config["sphere"]["radius"]
-        service = R + config["envelope"]["serviceZone"]
+        service = ring + R + config["envelope"]["serviceZone"]
         wrong = []
         clashes = 0
         for o in cols:
@@ -267,13 +285,13 @@ def main(path):
             st = o.Attributes.GetUserString("om.fit_status")
             clash = d < service
             clashes += clash
-            if clash != (st in ("inside", "service")) or (st == "inside") != (d < R):
+            if clash != (st in ("inside", "service")) or (st == "inside") != (d < ring + R):
                 wrong.append(o.Attributes.Name)
             if abs(hi[2] - lo[2] - b["clearHeight"]) > 1e-6:
                 wrong.append(o.Attributes.Name + " height")
         rep.check(not wrong, "column clash status matches its distance from the sphere centre", ", ".join(wrong[:5]))
         rep.check(clashes == bld["clashes"], f"{bld['clashes']} column clashes", f"found {clashes}")
-        half = R + config["envelope"]["serviceZone"]
+        half = ring + R + config["envelope"]["serviceZone"]
         x0, x1 = b["offsetX"] - b["width"] / 2, b["offsetX"] + b["width"] / 2
         y0, y1 = b["offsetY"] - b["depth"] / 2, b["offsetY"] + b["depth"] / 2
         plan_ok = x0 <= -half + 1e-9 and x1 >= half - 1e-9 and y0 <= -half + 1e-9 and y1 >= half - 1e-9
@@ -297,7 +315,7 @@ def main(path):
         wrong = []
         for o in units:
             x, y, z = exact_points(o.Geometry)[0]
-            d = math.sqrt(x * x + y * y + z * z)
+            d = tube(x, y, z)
             cat = o.Attributes.GetUserString("om.category")
             if cat == "Speaker" and o.Attributes.GetUserString("om.ring") != "zenith" and not (R < d < service):
                 wrong.append(f"{o.Attributes.Name} at {d:.2f}")
@@ -323,7 +341,7 @@ def main(path):
         rings = [o for o in top if cat(o) in ("RingGirder", "BaseRing", "TopRing")]
         rep.check(len(ribs) == stm["segments"].get("rib", 0) and len(rings) == stm["segments"].get("ring", 0),
                   f"{len(ribs)} rib and {len(rings)} ring segments, as in the manifest")
-        wrong = [o.Attributes.Name for o in ribs for x, y, z in exact_points(o.Geometry) if abs(math.sqrt(x * x + y * y + z * z) - stm["ribRadius"]) > 1e-6]
+        wrong = [o.Attributes.Name for o in ribs for x, y, z in exact_points(o.Geometry) if abs(tube(x, y, z) - stm["ribRadius"]) > 1e-6]
         rep.check(not wrong, f"every rib lies on the {stm['ribRadius']:.3f} m rib sphere (behind the screen)", ", ".join(wrong[:5]))
         R = config["sphere"]["radius"]
         rep.check(R < stm["ribRadius"] and stm["back"] <= R + config["envelope"]["serviceZone"] + 1e-9, "the structure sits between the screen and the service-zone limit",
@@ -340,7 +358,10 @@ def main(path):
         chains = [o for o in top if cat(o) == "Chain"]
         rep.check(len(chains) == stm["chains"], f"{stm['chains']} chains to pick beams, the crown grid or the roof", f"found {len(chains)}")
         nodes = [o for o in top if cat(o) == "StructureNode"]
-        rep.check(len(nodes) == stm["ribs"] * stm["rings"], f"one node bracket per rib × ring ({stm['ribs']} × {stm['rings']})", f"found {len(nodes)}")
+        if "nodes" in stm and stm["nodes"] != stm["ribs"] * stm["rings"]:
+            rep.check(len(nodes) == stm["nodes"], f"{stm['nodes']} node brackets (rib × ring, less the proscenium opening, plus its header)", f"found {len(nodes)}")
+        else:
+            rep.check(len(nodes) == stm["ribs"] * stm["rings"], f"one node bracket per rib × ring ({stm['ribs']} × {stm['rings']})", f"found {len(nodes)}")
 
     kin = manifest.get("transformation")
     if kin:
@@ -351,13 +372,15 @@ def main(path):
         wrong = []
         for a in moving:
             g = paths.get(a["id"])
-            if g is None or not isinstance(g.Geometry, r.LineCurve):
+            # The proscenium halves run two straight legs (back, then aside): a two-segment polyline.
+            want = r.PolylineCurve if a["kind"] == "proscenium" else r.LineCurve
+            if g is None or not isinstance(g.Geometry, want):
                 wrong.append(a["id"])
                 continue
             p0, p1 = g.Geometry.PointAtStart, g.Geometry.PointAtEnd
             if math.dist((p1.X - p0.X, p1.Y - p0.Y, p1.Z - p0.Z), a["travel"]) > 1e-6:
                 wrong.append(a["id"])
-        rep.check(not wrong, "every path is a straight line equal to its assembly's travel", ", ".join(wrong[:5]))
+        rep.check(not wrong, "every path is straight legs adding up to its assembly's travel", ", ".join(wrong[:5]))
         rep.check(all("conceptual" in (o.Attributes.GetUserString("om.status") or "") for o in paths.values()), "every path is marked conceptual")
         hold = min((a["start"] for a in moving), default=0)
         rep.check(hold >= config["transformation"]["clearanceHoldS"] - 1e-6, f"nothing moves before the {config['transformation']['clearanceHoldS']} s audience clearance", f"first motion at {hold} s")
@@ -369,10 +392,47 @@ def main(path):
             off = [o.Attributes.Name for o in moved if o.Attributes.GetUserString("om.parent_assembly") in travel
                    and math.dist([float(v) for v in o.Attributes.GetUserString("om.pose_offset").split(",")], travel[o.Attributes.GetUserString("om.parent_assembly")]) > 1e-6]
             rep.check(not off, "moved seating sits exactly one path length from its seated position", ", ".join(off[:5]))
+            wrong = [o.Attributes.Name for o in moved if math.dist(pose(o), travel[o.Attributes.GetUserString("om.moved_by")]) > 1e-6]
+            rep.check(not wrong, "every moved object is offset by exactly its assembly's travel", ", ".join(wrong[:5]))
             rep.check(all(o.Attributes.GetUserString("om.folded") == "yes" for o in seats if o.Attributes.GetUserString("om.pose_offset")), "moved seats are marked folded")
             if config["transformation"]["stage"] == "lift":
                 rep.check(abs(stage_top - floor) < TOL, "lowered stage is flush with the floor", f"top z = {stage_top:.4f}")
             rep.check(not [o for o in top if (o.Attributes.GetUserString("om.layer") or "").startswith("07_ANALYSIS/Sightline")], "no seated sightlines in the standing state")
+
+    pr = config["transformation"].get("proscenium") or {}
+    if pr.get("enabled"):
+        print(f"\nRetractable proscenium ({manifest['state']} state, open {pr['open']})")
+        layer_paths = [l.FullPath for l in model.Layers]
+        pieces = [o for o in top if layer_paths[o.Attributes.LayerIndex].endswith("::Proscenium")]
+        halves = {h: by_id.get(f"prosc.screen.{h}") for h in ("left", "right")}
+        rep.check(all(halves.values()) and len(pieces) >= 3, f"two moving halves plus {len(pieces) - 2} fixed screen sections")
+        area = sum(float(o.Attributes.GetUserString("om.area_m2")) for o in pieces)
+        ideal = float(by_id["media.ideal"].Attributes.GetUserString("om.area_m2"))
+        rep.check(abs(area - ideal) < 0.01, "the sections add up to the whole screen", f"{area:.2f} vs {ideal:.2f} m²")
+        worst = 0.0
+        for o in pieces:
+            srf = o.Geometry.Faces[0].UnderlyingSurface()
+            du, dv = srf.Domain(0), srf.Domain(1)
+            d = pose(o)
+            for i in range(9):
+                for j in range(9):
+                    p = srf.PointAt(du.T0 + (du.T1 - du.T0) * i / 8, dv.T0 + (dv.T1 - dv.T0) * j / 8)
+                    worst = max(worst, abs(tube(p.X - d[0], p.Y - d[1], p.Z - d[2]) - R))
+        rep.check(worst < 1e-9 * R, "every section is an exact patch of the screen surface (less its offset)", f"max |r - R| = {worst:.2e} m")
+        # Expected pose from the Open setting: back by travel·min(1, 2u), then aside by slide·max(0, 2u − 1).
+        timeline = config["transformation"]["enabled"] and pr["onTimeline"]
+        u = pr["open"] if (not timeline or manifest["state"] == "standing") else 0.0
+        bad = []
+        for h, o in halves.items():
+            if o is None:
+                continue
+            want = (float(o.Attributes.GetUserString("om.slide_m")) * max(0.0, 2 * u - 1), pr["travel"] * min(1.0, 2 * u), 0.0)
+            if math.dist(pose(o), want) > 1e-6:
+                bad.append(f"{h} at {pose(o)} not {want}")
+            riders = [x for x in top if (x.Attributes.GetUserString("om.category") or "").startswith("LED") and (x.Attributes.GetUserString("om.moved_by") == f"prosc.{h}" or (x.Attributes.GetUserString("om.carriage_offset_m") and math.dist(pose(x), pose(o)) < 1e-9))]
+            if any(math.dist(pose(x), pose(o)) > 1e-6 for x in riders):
+                bad.append(f"{h} LED units off their half")
+        rep.check(not bad, "halves sit where the Open setting puts them (back first, then aside) and their LED units ride with them", "; ".join(bad))
 
     print()
     if rep.failures:

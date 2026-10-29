@@ -45,8 +45,13 @@ export interface SourceReference {
 // ─── Configuration (source of truth) ────────────────────────────────────────
 
 export interface SphereDefinition {
-  /** Radius of the reference sphere. Its centre is always the world origin. */
+  /** Radius of the reference sphere (the tube radius of the torus form). Its centre is always the world origin. */
   radius: number;
+  /**
+   * Torus form (Round 10): ring radius of the tube centre circle in the equator plane. 0 or absent is
+   * the sphere; above 0 the screen is a torus section, and an upper elevation below 90° cuts the top off.
+   */
+  ringRadius?: number;
 }
 
 export interface MediaSurfaceDefinition {
@@ -153,6 +158,37 @@ export interface TransformationDefinition {
   clearanceHoldS: number;
   /** Seat fold time (s). */
   foldS: number;
+  /** Front section of the screen that slides back (+Y) to open a proscenium. */
+  proscenium: ProsceniumDefinition;
+}
+
+/**
+ * Retractable proscenium (Round 10). A sector of the media surface centred on the forward axis, from
+ * the screen's lower edge up to `topDeg`, is a separate carriage that slides straight back along +Y by
+ * `travel` and then splits and slides apart, leaving a proscenium opening in the front of the sphere.
+ * `open` sets how far; `onTimeline` plays it on the seated → standing sequence. LED units whose centres fall in the sector
+ * ride on the carriage.
+ */
+export interface ProsceniumDefinition {
+  enabled: boolean;
+  /** Width of the moving section, degrees of azimuth centred on +Y. */
+  widthDeg: number;
+  /** Upper edge of the moving section, degrees of elevation. */
+  topDeg: number;
+  /** Distance the section slides back along +Y (m). */
+  travel: number;
+  /** Carriage speed (m/s). */
+  speed: number;
+  /**
+   * How far open, 0–1. The first half of the range pushes the carriage back by `travel`; the second
+   * half splits it at the forward axis and slides each half sideways until the opening is clear.
+   */
+  open: number;
+  /**
+   * On: closed when seated, opening to `open` on the seated → standing timeline (needs the
+   * transformation). Off: held at `open` in every state.
+   */
+  onTimeline: boolean;
 }
 
 /**
@@ -348,12 +384,13 @@ export type Geometry =
   /** Full circle in a plane with the given normal. */
   | { kind: 'circle'; center: Vec3; normal: Vec3; radius: number }
   /** Arc of a latitude circle on the reference sphere. */
-  | { kind: 'latitudeArc'; radius: number; elevation: number; azimuth0: number; azimuth1: number }
+  | { kind: 'latitudeArc'; radius: number; elevation: number; azimuth0: number; azimuth1: number; ring?: number }
   /** Arc of a meridian on the reference sphere. */
-  | { kind: 'meridianArc'; radius: number; azimuth: number; elevation0: number; elevation1: number }
-  | { kind: 'sphere'; center: Vec3; radius: number }
+  | { kind: 'meridianArc'; radius: number; azimuth: number; elevation0: number; elevation1: number; ring?: number }
+  /** Sphere, or with `ring` > 0 the full torus about Z through `center`. */
+  | { kind: 'sphere'; center: Vec3; radius: number; ring?: number }
   /** Exact azimuth/elevation-bounded patch of the origin-centred sphere (radians). */
-  | { kind: 'spherePatch'; radius: number; azimuth0: number; azimuth1: number; elevation0: number; elevation1: number }
+  | { kind: 'spherePatch'; radius: number; azimuth0: number; azimuth1: number; elevation0: number; elevation1: number; ring?: number; /** Translation applied after the patch is built (a moved carriage). */ offset?: Vec3 }
   /** Axis-aligned box. */
   | { kind: 'box'; min: Vec3; max: Vec3 }
   /** Box in a local frame: x ∈ [-sx/2, sx/2], y ∈ [-sy/2, sy/2], z ∈ [z0, z0 + sz]. */

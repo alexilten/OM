@@ -5,8 +5,8 @@
  * placement rules, not a lighting or acoustic design; every cost and most weights are placeholders.
  */
 import { getAudioProduct, getCatalogItem, getSystem, SYSTEMS, type SystemUnit } from '../library/catalog';
-import { add, facingFrame, scale, spherePoint, toRad, toSpherical } from './coordinates';
-import { mediaBounds, sphereRadiusAt } from './media';
+import { add, facingFrame, length, scale, sub, surfaceNormal, surfacePoint, toRad, toSurface } from './coordinates';
+import { mediaBounds, ringOf, sphereRadiusAt } from './media';
 import type { PickRequest, StructureLayout } from './structure';
 import type { BlockDefinition, Frame, Issue, Metric, SeatRecord, SystemId, Tier, VenueConfiguration, VenueObject, Vec3 } from './types';
 
@@ -90,8 +90,11 @@ export function generateSystems(c: VenueConfiguration, objects: VenueObject[], s
   const issues: Issue[] = [];
   const tallies = new Map<SystemId, Map<string, UnitTally>>();
   const R = c.sphere.radius;
+  const ring = ringOf(c);
   const f = c.floor.mainFloorElevation;
-  const mb = mediaBounds(R, c.media);
+  const mb = mediaBounds(R, c.media, ring);
+  /** Horizontal radius of the screen surface at height z (sphere or torus form). */
+  const radiusAt = (z: number) => sphereRadiusAt(R, z, ring);
   let occlusion = 0;
   const picks: PickRequest[] = [];
   const hoistPicks = (points: Vec3[], hoist: SystemUnit, load: number, rig: string) =>
@@ -141,8 +144,8 @@ export function generateSystems(c: VenueConfiguration, objects: VenueObject[], s
 
   /** Adds the solid angle an overhead object hides from the reference eye, when it sits in front of the screen. */
   const occlude = (p: Vec3, area: number) => {
-    const [d, az, el] = toSpherical(p);
-    if (d < R && az >= mb.az0 && az <= mb.az1 && el >= mb.el0 && el <= mb.el1) occlusion += area / (d * d);
+    const [d, az, el] = toSurface(p, ring);
+    if (d < R && az >= mb.az0 && az <= mb.az1 && el >= mb.el0 && el <= mb.el1) occlusion += area / length(p) ** 2;
   };
 
   // ── Lighting ──────────────────────────────────────────────────────────────
@@ -157,7 +160,7 @@ export function generateSystems(c: VenueConfiguration, objects: VenueObject[], s
     const st = c.stage;
     // Stage truss: 0.5 m outside the stage edge, 5.5 m above the deck, shrunk to stay inside the sphere.
     const tz = Math.min(deckTop + 5.5, R * 0.8);
-    const limit = sphereRadiusAt(R, tz) - 0.5;
+    const limit = radiusAt(tz) - 0.5;
     let hx = st.width / 2 + 0.5;
     let hy = st.depth / 2 + 0.5;
     if (rectReach(hx, st.centerY, hy) > limit) {
@@ -207,7 +210,7 @@ export function generateSystems(c: VenueConfiguration, objects: VenueObject[], s
 
     // Wash ring at the screen base, just inside the sphere, lighting the room and the audience.
     const wz = f + 0.3;
-    const wr = sphereRadiusAt(R, wz) - 0.8;
+    const wr = radiusAt(wz) - 0.8;
     const nw = n('lighting', WASH_RING[L.tier]);
     for (let k = 0; k < nw; k++) {
       const az = mb.az0 + ((k + 0.5) / nw) * (mb.az1 - mb.az0);
@@ -219,7 +222,7 @@ export function generateSystems(c: VenueConfiguration, objects: VenueObject[], s
     const laser = unitOf('fx-laser');
     if (laser && spot) {
       const hz = Math.min(R * Math.sin(mb.el1), R * 0.95);
-      const hr = Math.max(1.5, Math.min(0.75 * R * Math.cos(mb.el1), sphereRadiusAt(R, hz) - 1));
+      const hr = Math.max(1.5, Math.min(0.75 * (ring + R * Math.cos(mb.el1)), radiusAt(hz) - 1));
       const circ = 2 * Math.PI * hr;
       out.push({ id: 'sys.lighting.truss.halo', name: 'Halo_Truss', layer: RIGGING, category: 'Truss', geometry: { kind: 'circle', center: [0, 0, hz], normal: Z, radius: hr }, operatingState: 'all', metadata: { system: 'lighting', unit: truss.id, length_m: +circ.toFixed(3), z: +hz.toFixed(4), status: 'conceptual' } });
       tally('lighting', truss, circ);
@@ -258,7 +261,8 @@ export function generateSystems(c: VenueConfiguration, objects: VenueObject[], s
     if (!rings.length) issues.push({ severity: 'warning', code: 'audio-no-rings', message: 'No array ring fits inside the media surface; widen its elevation range.', path: 'media' });
     let positions = 0;
     for (const [ri, e] of rings.entries()) {
-      const count = Math.max(2, Math.round(product.positionsPerRing[A.tier] * A.scale * Math.cos(e)));
+      // Positions scale with the ring's circumference (the torus form's rings are longer).
+      const count = Math.max(2, Math.round((product.positionsPerRing[A.tier] * A.scale * (ring + R * Math.cos(e))) / R));
       // With a structure, positions snap to evenly spread slots inside the bays, clear of the ribs.
       const perBay = layout ? Math.ceil(count / layout.bays.length) : 1;
       const slots = layout ? layout.bays.length * perBay : count;
@@ -269,8 +273,8 @@ export function generateSystems(c: VenueConfiguration, objects: VenueObject[], s
           const [a0, a1] = layout.bays[Math.floor(slot / perBay)];
           az = a0 + (((slot % perBay) + 0.5) / perBay) * (a1 - a0);
         }
-        const centre = spherePoint(rc, az, e);
-        const frame = facingFrame(centre, [0, 0, 0]);
+        const centre = surfacePoint(rc, az, e, ring);
+        const frame = facingFrame(centre, sub(centre, surfaceNormal(az, e)));
         for (let m = 0; m < modules; m++) {
           const origin = add(centre, scale(frame.zAxis, (m - modules / 2) * h));
           place('audio', main, layer, 'Speaker', { ...frame, origin }, { ring: ri, position: positions, module: m, product: product.label, front_radius_m: +(R + gap).toFixed(4) });
@@ -281,7 +285,7 @@ export function generateSystems(c: VenueConfiguration, objects: VenueObject[], s
     }
     // Flagship zenith array, hung on the axis in the oculus (or behind a closed dome) and aimed down.
     if (A.tier === 'flagship') {
-      const closed = mb.el1 > toRad(88);
+      const closed = !ring && mb.el1 > toRad(88);
       const zz = closed ? R + gap : R * Math.sin(mb.el1) + 0.5;
       const nz = Math.max(3, Math.round(4 * A.scale));
       circlePoints(0.8, zz, nz).forEach((p, k) => {
@@ -293,7 +297,7 @@ export function generateSystems(c: VenueConfiguration, objects: VenueObject[], s
     }
     // Subwoofers on the floor behind the screen base.
     const ns = n('audio', SUBS[A.tier]);
-    const sr = sphereRadiusAt(R, f) + gap + product.sub.size[1] / 2;
+    const sr = radiusAt(f) + gap + product.sub.size[1] / 2;
     for (let k = 0; k < ns; k++) {
       const az = mb.az0 + ((k + 0.5) / ns) * (mb.az1 - mb.az0);
       const o: Vec3 = [sr * Math.sin(az), sr * Math.cos(az), f];
@@ -314,7 +318,7 @@ export function generateSystems(c: VenueConfiguration, objects: VenueObject[], s
   const AT = c.systems.atmospherics;
   if (AT.enabled) {
     const units = getSystem('atmospherics').tiers[AT.tier].units.flatMap((u) => Array.from({ length: ATMOS[u.id][AT.tier] ? n('atmospherics', ATMOS[u.id][AT.tier]!) : 0 }, () => u));
-    const r = sphereRadiusAt(R, f) - 0.6;
+    const r = radiusAt(f) - 0.6;
     circlePoints(r, f, units.length, 0.5).forEach((p, k) => place('atmospherics', units[k], getSystem('atmospherics').layer, 'Atmospherics', facingFrame(p, [0, 0, f])));
   }
 
@@ -326,7 +330,7 @@ export function generateSystems(c: VenueConfiguration, objects: VenueObject[], s
     for (const [ui, u] of getSystem('tracking').tiers[T.tier].units.entries()) {
       const count = n('tracking', TRACKING[u.id][T.tier] ?? 0);
       const z = f + 2.5 + ui * 0.7;
-      const r = sphereRadiusAt(R, z) - 0.3;
+      const r = radiusAt(z) - 0.3;
       for (let k = 0; k < count; k++) {
         const az = -span + ((k + 0.5) / count) * 2 * span;
         const o: Vec3 = [r * Math.sin(az), r * Math.cos(az), z];
