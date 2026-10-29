@@ -102,6 +102,10 @@ export function validateConfig(c: VenueConfiguration): Issue[] {
     warn('seating.riserHeight', 'riser-steep', 'Riser exceeds 380 mm; aisle steps would need intermediate half-steps.');
 
   if (c.stage.width <= 0 || c.stage.depth <= 0 || c.stage.height < 0) err('stage.width', 'stage-size', 'Stage dimensions must be positive.');
+  for (const k of ['backReach', 'sideReach'] as const) {
+    const v = c.stage[k];
+    if (v !== undefined && (!finite(v) || v < 0 || v > 1)) err(`stage.${k}`, 'stage-reach', 'Stage reach must be between 0 and 1.');
+  }
   if (c.envelope.serviceZone < 0 || c.envelope.overheadClearance < 0) err('envelope.serviceZone', 'envelope', 'Envelope clearances cannot be negative.');
 
   if (c.led.enabled) {

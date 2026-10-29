@@ -13,6 +13,7 @@
  * if folded seats + deck fit within the riser, which the collision check verifies rather than assumes.
  */
 import { ringOf, sphereRadiusAt } from './media';
+import { onStage, sample, stageFootprint } from './stage';
 import { carriageBox, carriageLegs, carriageOf, HALVES, halfId, halfSector, movesOnTimeline, prosceniumSector } from './proscenium';
 import type { Geometry, Issue, Metric, SeatRecord, VenueConfiguration, VenueObject, Vec3 } from './types';
 
@@ -20,7 +21,8 @@ export type AssemblyKind = 'telescopic-wagon' | 'stage-lift' | 'proscenium';
 
 export type Envelope =
   | { kind: 'sector'; center: [number, number]; r0: number; r1: number; a0: number; a1: number; z0: number; z1: number }
-  | { kind: 'box'; min: Vec3; max: Vec3 };
+  /** `outline` (plan, closed) narrows the box to a shaped footprint, such as a deck joined to the screen. */
+  | { kind: 'box'; min: Vec3; max: Vec3; outline?: [number, number][] };
 
 export interface KineticAssembly {
   id: string;
@@ -114,6 +116,10 @@ export function translateGeometry(g: Geometry, d: Vec3): Geometry {
       return { ...g, min: p(g.min), max: p(g.max) };
     case 'annularSector':
       return { ...g, center: [g.center[0] + d[0], g.center[1] + d[1]], zBottom: g.zBottom + d[2], zTop: g.zTop + d[2] };
+    case 'planProfile': {
+      const q = (v: [number, number]): [number, number] => [v[0] + d[0], v[1] + d[1]];
+      return { ...g, segments: g.segments.map((s) => (s.kind === 'line' ? { ...s, a: q(s.a), b: q(s.b) } : { ...s, center: q(s.center) })), zBottom: g.zBottom + d[2], zTop: g.zTop + d[2] };
+    }
     case 'blockInstance':
     case 'frameBox':
       return { ...g, frame: { ...g.frame, origin: p(g.frame.origin) } };
@@ -135,6 +141,7 @@ export function posedObjects(objects: VenueObject[], tr: TransformationModel, po
 
 /** Sector angles follow the seating convention: point = centre + (r·sin a, −r·cos a). */
 function samplePoints(e: Envelope): [number, number][] {
+  if (e.kind === 'box' && e.outline) return e.outline;
   if (e.kind === 'box')
     return [
       [e.min[0], e.min[1]],
@@ -169,12 +176,15 @@ export const SCREEN_GAP = 0.2;
 function clearOfScreen(c: VenueConfiguration, e: Envelope, pts: [number, number][], d: Vec3): boolean {
   const [z0, z1] = zBand(e);
   const R = c.sphere.radius;
-  const limit = Math.min(sphereRadiusAt(R, z0 + d[2], ringOf(c)), sphereRadiusAt(R, z1 + d[2], ringOf(c))) - SCREEN_GAP;
+  // The screen stops at the main floor: below it (a lift going into its pit) there is nothing to clear.
+  const f = c.floor.mainFloorElevation;
+  if (z1 + d[2] <= f) return true;
+  const limit = Math.min(sphereRadiusAt(R, Math.max(f, z0 + d[2]), ringOf(c)), sphereRadiusAt(R, z1 + d[2], ringOf(c))) - SCREEN_GAP;
   return pts.every(([x, y]) => Math.hypot(x + d[0], y + d[1]) <= limit + 1e-9);
 }
 
 function inside(e: Envelope, x: number, y: number): boolean {
-  if (e.kind === 'box') return x > e.min[0] + TOUCH && x < e.max[0] - TOUCH && y > e.min[1] + TOUCH && y < e.max[1] - TOUCH;
+  if (e.kind === 'box') return x > e.min[0] + TOUCH && x < e.max[0] - TOUCH && y > e.min[1] + TOUCH && y < e.max[1] - TOUCH && (!e.outline || inPolygon(e.outline, x, y));
   const dx = x - e.center[0];
   const dy = e.center[1] - y;
   const r = Math.hypot(dx, dy);
@@ -182,6 +192,16 @@ function inside(e: Envelope, x: number, y: number): boolean {
   const a = Math.atan2(dx, dy);
   const tol = TOUCH / r;
   return a > e.a0 + tol && a < e.a1 - tol;
+}
+
+function inPolygon(pts: [number, number][], x: number, y: number) {
+  let inside = false;
+  for (let i = 0, j = pts.length - 1; i < pts.length; j = i++) {
+    const [xi, yi] = pts[i];
+    const [xj, yj] = pts[j];
+    if (yi > y !== yj > y && x < ((xj - xi) * (y - yi)) / (yj - yi) + xi) inside = !inside;
+  }
+  return inside;
 }
 
 const zBand = (e: Envelope): [number, number] => (e.kind === 'box' ? [e.min[2], e.max[2]] : [e.z0, e.z1]);
@@ -278,9 +298,11 @@ export function generateTransformation(c: VenueConfiguration, objects: VenueObje
   }
 
   const stage = objects.filter((o) => o.layer.startsWith('03_STAGE'));
-  const stageBox = stage.find((o) => o.geometry.kind === 'box');
-  if (t.stage === 'lift' && stageBox && c.stage.height > 0) {
-    const g = stageBox.geometry as Extract<Geometry, { kind: 'box' }>;
+  const deck = stage.find((o) => o.id === 'stage.main');
+  if (t.stage === 'lift' && deck && c.stage.height > 0) {
+    // The lift envelope is the deck's plan bounds (the joined deck's arcs stay inside them).
+    const fp = stageFootprint(c);
+    const g = { min: [fp.min[0], fp.min[1], c.floor.mainFloorElevation] as Vec3, max: [fp.max[0], fp.max[1], c.floor.mainFloorElevation + c.stage.height] as Vec3, outline: fp.attached ? sample(fp.segments) : undefined };
     assemblies.push({
       id: 'lift.stage',
       name: 'Stage lift',
@@ -289,7 +311,7 @@ export function generateTransformation(c: VenueConfiguration, objects: VenueObje
       travel: [0, 0, -c.stage.height],
       start: moveStart,
       duration: c.stage.height / t.stageSpeed,
-      envelope: { kind: 'box', min: g.min, max: g.max },
+      envelope: { kind: 'box', min: g.min, max: g.max, outline: g.outline },
     });
   }
 
@@ -385,12 +407,18 @@ export function generateTransformation(c: VenueConfiguration, objects: VenueObje
   }
   if (lift && lift.envelope.kind === 'box') {
     const { min, max } = lift.envelope;
+    const deck = objects.find((o) => o.id === 'stage.main');
+    // The pit follows the deck outline, one deck height below the floor.
+    const pit: Geometry =
+      deck?.geometry.kind === 'planProfile'
+        ? { ...deck.geometry, zBottom: min[2] - c.stage.height, zTop: min[2] }
+        : { kind: 'box', min: [min[0], min[1], min[2] - c.stage.height], max: [max[0], max[1], min[2]] };
     out.push({
       id: 'pit.stage',
       name: 'Stage_Lift_Pit',
       layer: '04_TRANSFORMATION/Storage_Volumes',
       category: 'StorageVolume',
-      geometry: { kind: 'box', min: [min[0], min[1], min[2] - c.stage.height], max: [max[0], max[1], min[2]] },
+      geometry: pit,
       operatingState: 'standing',
       metadata: { assembly: lift.id, depth_m: c.stage.height, status: 'conceptual (not engineered)' },
     });
@@ -519,13 +547,13 @@ function standingArea(c: VenueConfiguration, tr: TransformationModel) {
     obstacles.push({ e: { kind: 'sector', center: [0, s.focusY], r0, r1: r0 + s.rowCount * s.rowPitch, a0: -A / 2, a1: A / 2, z0: floor, z1: floor + 1 }, d: [0, 0, 0] });
   }
   const liftsFlush = tr.assemblies.some((a) => a.kind === 'stage-lift');
-  const st = c.stage;
+  const deck = stageFootprint(c);
   let n = 0;
   if (radius > 0)
     for (let x = -radius + cell / 2; x < radius; x += cell)
       for (let y = -radius + cell / 2; y < radius; y += cell) {
         if (x * x + y * y > radius * radius) continue;
-        if (!liftsFlush && Math.abs(x) < st.width / 2 && Math.abs(y - st.centerY) < st.depth / 2) continue;
+        if (!liftsFlush && onStage(deck, x, y)) continue;
         if (obstacles.some(({ e, d }) => inside(e, x - d[0], y - d[1]))) continue;
         n++;
       }

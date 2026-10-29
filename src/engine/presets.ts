@@ -55,7 +55,7 @@ export const PERFORMANCE_PRESETS: PerformancePreset[] = [
     description: 'Premium seated viewing; a low cinematic stage under the screen.',
     apply: (c, s, size) => {
       frontal(c, s, size);
-      c.stage = { type: 'cinematic', width: 9 * s, depth: 3.2 * s, height: 0.9, centerY: 9 * s };
+      c.stage = { ...c.stage, type: 'cinematic', width: 9 * s, depth: 3.2 * s, height: 0.9, centerY: 9 * s };
     },
   },
   {
@@ -65,7 +65,7 @@ export const PERFORMANCE_PRESETS: PerformancePreset[] = [
     apply: (c, s, size) => {
       frontal(c, s, size);
       c.seating.sectionAngleDeg = size.sectionAngleDeg + 10;
-      c.stage = { type: 'concert', width: 11 * s, depth: 4.5 * s, height: 1.0, centerY: 8.4 * s };
+      c.stage = { ...c.stage, type: 'concert', width: 11 * s, depth: 4.5 * s, height: 1.0, centerY: 8.4 * s };
     },
   },
   {
@@ -88,7 +88,7 @@ export const PERFORMANCE_PRESETS: PerformancePreset[] = [
       c.media.azimuthRightDeg = 95;
       c.seating.focusY = 4.5 * s;
       c.seating.sectionAngleDeg = 100;
-      c.stage = { type: 'proscenium', width: 12 * s, depth: 5 * s, height: 1.0, centerY: 7.5 * s };
+      c.stage = { ...c.stage, type: 'proscenium', width: 12 * s, depth: 5 * s, height: 1.0, centerY: 7.5 * s };
     },
   },
   {
@@ -103,7 +103,7 @@ export const PERFORMANCE_PRESETS: PerformancePreset[] = [
       c.seating.rowCount = Math.max(3, Math.round((size.rowCount * 5) / 12));
       c.seating.sectionAngleDeg = 330;
       c.seating.aisleCount = 4;
-      c.stage = { type: 'central', width: 6 * s, depth: 6 * s, height: 0.9, centerY: 0 };
+      c.stage = { ...c.stage, type: 'central', width: 6 * s, depth: 6 * s, height: 0.9, centerY: 0 };
       c.operatingState = 'seated';
     },
   },

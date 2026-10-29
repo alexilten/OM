@@ -1,5 +1,6 @@
 /** Stage generator and architectural envelope (subsystems 6 and 8, Round 01 scope). */
 import { mediaBounds, ringOf, sphereRadiusAt } from './media';
+import { stageFootprint } from './stage';
 import type { Issue, Metric, VenueConfiguration, VenueObject, Vec3 } from './types';
 
 export function stageObjects(c: VenueConfiguration): { objects: VenueObject[]; issues: Issue[] } {
@@ -7,6 +8,24 @@ export function stageObjects(c: VenueConfiguration): { objects: VenueObject[]; i
   const f = c.floor.mainFloorElevation;
   const top = f + st.height;
   const issues: Issue[] = [];
+  const fp = stageFootprint(c);
+  const meta = { stage_type: st.type, width_m: st.width, depth_m: st.depth, deck_height_m: st.height, deck_z: +top.toFixed(4), area_m2: +fp.area.toFixed(4), plan_width_m: +(fp.max[0] - fp.min[0]).toFixed(6), plan_depth_m: +(fp.max[1] - fp.min[1]).toFixed(6), status: 'conceptual' };
+  if (fp.attached) {
+    return {
+      issues,
+      objects: [
+        {
+          id: 'stage.main',
+          name: 'Main_Stage',
+          layer: '03_STAGE/Main_Stage',
+          category: 'Stage',
+          geometry: { kind: 'planProfile', segments: fp.segments, zBottom: f, zTop: top },
+          operatingState: 'all',
+          metadata: { ...meta, joined_to_screen: 'yes', trim_radius_m: +fp.trimRadius.toFixed(6), back_reach: st.backReach ?? 1, side_reach: st.sideReach ?? 1 },
+        },
+      ],
+    };
+  }
   const corners: [number, number][] = [
     [-st.width / 2, st.centerY - st.depth / 2],
     [st.width / 2, st.centerY - st.depth / 2],
@@ -27,7 +46,7 @@ export function stageObjects(c: VenueConfiguration): { objects: VenueObject[]; i
         category: 'Stage',
         geometry: { kind: 'box', min: [-st.width / 2, st.centerY - st.depth / 2, f], max: [st.width / 2, st.centerY + st.depth / 2, top] },
         operatingState: 'all',
-        metadata: { stage_type: st.type, width_m: st.width, depth_m: st.depth, deck_height_m: st.height, deck_z: +top.toFixed(4), status: 'conceptual' },
+        metadata: { ...meta, joined_to_screen: 'no' },
       },
     ],
   };

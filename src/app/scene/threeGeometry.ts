@@ -5,6 +5,7 @@
 import * as THREE from 'three';
 import { mergeGeometries } from 'three/examples/jsm/utils/BufferGeometryUtils.js';
 import { surfaceNormal, surfacePoint } from '../../engine/coordinates';
+import { sample } from '../../engine/stage';
 import type { BlockDefinition, Frame, Geometry, Vec3 } from '../../engine/types';
 
 /** Sphere (or torus, `ring` > 0) patch with UVs in (azimuth, elevation) space; normals face inwards. */
@@ -57,6 +58,13 @@ export function annularSectorGeometry(g: Extract<Geometry, { kind: 'annularSecto
   shape.moveTo(...at(g.outerRadius, g.angle0).toArray());
   for (let k = 1; k <= steps; k++) shape.lineTo(...at(g.outerRadius, g.angle0 + ((g.angle1 - g.angle0) * k) / steps).toArray());
   for (let k = steps; k >= 0; k--) shape.lineTo(...at(g.innerRadius, g.angle0 + ((g.angle1 - g.angle0) * k) / steps).toArray());
+  const geo = new THREE.ExtrudeGeometry(shape, { depth: g.zTop - g.zBottom, bevelEnabled: false, curveSegments: 1 });
+  geo.translate(0, 0, g.zBottom);
+  return geo;
+}
+
+export function planProfileGeometry(g: Extract<Geometry, { kind: 'planProfile' }>): THREE.BufferGeometry {
+  const shape = new THREE.Shape(sample(g.segments).map(([x, y]) => new THREE.Vector2(x, y)));
   const geo = new THREE.ExtrudeGeometry(shape, { depth: g.zTop - g.zBottom, bevelEnabled: false, curveSegments: 1 });
   geo.translate(0, 0, g.zBottom);
   return geo;
